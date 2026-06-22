@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.env/
+.venv/
+ct_pipeline_env/
+
+# Conda
+.conda/
+
+# Data files (large, not for git)
+data/pointclouds/*.ply
+data/models/*.glb
+data/models/*.fbx
+data/models/*.obj
+
+# Test outputs
+test/pointclouds/
+test/models/
+view/output/
+
+# Temporary / scratch files
+test/preprocess.py
+test/
