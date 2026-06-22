@@ -20,3 +20,15 @@ python view/visualize.py --ply /path/to/file.ply
 
 # Just print stats, no plot
 python view/visualize.py --all --no-plot 2>/dev/null
+
+# Point at patient folder (auto-finds segmentations/ inside)
+python view/visualize.py --seg ~/Downloads/Totalsegmentator_dataset_small_v201/wholebody/s1388
+
+# Point at segmentations folder directly
+python view/visualize.py --seg ~/Downloads/Totalsegmentator_dataset_small_v201/wholebody/s1388/segmentations
+
+# Multiple patients via folder
+python view/visualize.py --seg ~/Downloads/.../s1388 ~/Downloads/.../s1371
+
+# Mix --seg and --p together
+python view/visualize.py --seg ~/Downloads/.../s1388 -p s1371 --save
