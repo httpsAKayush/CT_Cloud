@@ -22,6 +22,8 @@ ct_pipeline_env/
 
 # Data files (large, not for git)
 data/pointclouds/*.ply
+data/pointclouds/rawclouds/*.ply
+data/pointclouds/unionclouds/*.ply
 data/models/*.glb
 data/models/*.fbx
 data/models/*.obj
