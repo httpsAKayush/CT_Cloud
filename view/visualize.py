@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import open3d as o3d
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import PLY_DIR, PATIENTS
+from config import PATIENTS
+from config import UNION_PLY_DIR, RAW_PLY_DIR
 
 
 def load_ply(path):
@@ -14,9 +15,9 @@ def load_ply(path):
     return np.asarray(pcd.points)
 
 
-def plot_patient(pts, patient_id, save_dir=None):
+def plot_patient(pts, patient_id, save_dir=None, source_type="segmentation_union"):
     fig, axes = plt.subplots(1, 3, figsize=(15, 6))
-    fig.suptitle(f"Patient: {patient_id}", fontsize=14)
+    fig.suptitle(f"Patient: {patient_id} [{source_type}]", fontsize=14)
 
     views = [
         (0, 1, "Front (X-Y)"),
@@ -34,8 +35,19 @@ def plot_patient(pts, patient_id, save_dir=None):
     plt.tight_layout()
 
     if save_dir:
-        os.makedirs(save_dir, exist_ok=True)
-        out = os.path.join(save_dir, f"{patient_id}_views.png")
+        # Subfolder by source type
+        if source_type == "union":
+            sub = os.path.join(save_dir, "union")
+
+        elif source_type == "raw":
+            sub = os.path.join(save_dir, "raw")
+
+        else:
+            sub = os.path.join(save_dir, "custom")
+
+
+        os.makedirs(sub, exist_ok=True)
+        out = os.path.join(sub, f"{patient_id}_views.png")
         plt.savefig(out, dpi=150, bbox_inches="tight")
         print(f"  Saved: {out}")
         plt.close()
@@ -57,33 +69,42 @@ def print_stats(pts, patient_id):
     print(f"  Depth  : {depth:.1f} mm")
 
 
-def resolve_patients(args_patients, args_ply, args_all):
-    """Resolve which .ply files to visualize based on CLI args."""
-    targets = {}  # patient_id → ply_path
+def resolve_patients(args_patients, args_all, source):
+    targets = {}
 
-    if args_all:
-        for pid in PATIENTS:
-            path = os.path.join(PLY_DIR, f"{pid}.ply")
+    if source == "union":
+        dirs = [("union", UNION_PLY_DIR)]
+
+    elif source == "raw":
+        dirs = [("raw", RAW_PLY_DIR)]
+
+    else:  # both
+        dirs = [
+            ("union", UNION_PLY_DIR),
+            ("raw", RAW_PLY_DIR)
+        ]
+
+    patient_list = PATIENTS if args_all else args_patients
+
+    if not patient_list:
+        return targets
+
+    for pid in patient_list:
+
+        for cloud_type, base_dir in dirs:
+
+            path = os.path.join(base_dir, f"{pid}.ply")
+
             if os.path.exists(path):
-                targets[pid] = path
-            else:
-                print(f"  WARNING: {path} not found, skipping")
-        return targets
 
-    if args_ply:
-        for p in args_ply:
-            pid = os.path.splitext(os.path.basename(p))[0]
-            targets[pid] = p
-        return targets
+                targets[f"{pid}_{cloud_type}"] = (
+                    pid,
+                    cloud_type,
+                    path
+                )
 
-    if args_patients:
-        for pid in args_patients:
-            path = os.path.join(PLY_DIR, f"{pid}.ply")
-            if os.path.exists(path):
-                targets[pid] = path
             else:
-                print(f"  WARNING: {path} not found, skipping")
-        return targets
+                print(f"WARNING: {path} not found")
 
     return targets
 
@@ -126,32 +147,28 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""
 Examples:
-  # View one patient
   python view/visualize.py -p s1388
-
-  # View multiple patients
   python view/visualize.py -p s1388 s1371 s1369
-
-  # View all patients
   python view/visualize.py --all
-
-  # Point directly at a .ply file
-  python view/visualize.py --ply /path/to/custom.ply
-
-  # Save images instead of showing interactively
   python view/visualize.py --all --save
-
-  # Save to custom folder
   python view/visualize.py -p s1388 --save --save-dir ~/Desktop/views
+  python view/visualize.py --ply /path/to/file.ply
+  python view/visualize.py --seg ~/Downloads/.../s1388
+  python view/visualize.py --seg ~/Downloads/.../s1388 -p s1371 --save
         """
     )
 
+    parser.add_argument("--source",choices=["union", "raw", "both"],default="union",
+                        help="Which cloud type to visualize")
+
+    parser.add_argument("--dir",
+                        help="Directory containing .ply files")
     parser.add_argument("-p", "--patients", nargs="+",
                         help="Patient IDs to visualize (e.g. s1388 s1371)")
     parser.add_argument("--ply", nargs="+",
                         help="Direct paths to .ply files")
     parser.add_argument("--seg", nargs="+",
-                        help="Direct paths to segmentation folders (generates point cloud on the fly, not saved)")
+                        help="Direct paths to segmentation folders (generates point cloud on the fly)")
     parser.add_argument("--all", action="store_true",
                         help="Visualize all patients in config")
     parser.add_argument("--save", action="store_true",
@@ -164,43 +181,110 @@ Examples:
     args = parser.parse_args()
 
     # Default: show all if nothing specified
-    if not args.patients and not args.ply and not args.all:
+    if not args.patients and not args.ply and not args.seg and not args.all:
         print("No input specified — showing all patients. Use -h for options.")
         args.all = True
 
-    targets = resolve_patients(args.patients, args.ply, args.all)
-
-    if not targets:
-        print("No valid point clouds found. Run run_preprocess.py first.")
-        return
-
-    # Handle --seg folders (on the fly, no .ply needed)
-    if args.seg:
-        for seg_path in args.seg:
-            pid = os.path.basename(seg_path.rstrip("/"))
-            if pid == "segmentations":
-                pid = os.path.basename(os.path.dirname(seg_path.rstrip("/")))
-            print(f"\nGenerating point cloud from segmentation folder: {seg_path}")
-            pts = pointcloud_from_seg_folder(seg_path)
-            if args.stats:
-                print_stats(pts, pid)
-            plot_patient(pts, pid, save_dir=save_dir)
-        # Don't fall through to targets loop for --seg
-        if not targets:
-            return
-
+    # Resolve save directory
     save_dir = None
     if args.save:
         save_dir = args.save_dir or os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "output"
         )
 
-    for pid, path in targets.items():
-        print(f"Loading {pid} from {path}...")
-        pts = load_ply(path)
-        if args.stats:
-            print_stats(pts, pid)
-        plot_patient(pts, pid, save_dir=save_dir)
+    # ── Handle --seg folders (on the fly, no .ply needed) ────────────────────
+    if args.seg:
+        for seg_path in args.seg:
+            # Derive patient ID from folder name
+            base = os.path.basename(seg_path.rstrip("/"))
+            pid = base if base != "segmentations" else \
+                os.path.basename(os.path.dirname(seg_path.rstrip("/")))
+
+            print(f"\nGenerating point cloud from segmentation folder: {seg_path}")
+            try:
+                pts = pointcloud_from_seg_folder(seg_path)
+                if args.stats:
+                    print_stats(pts, pid)
+                plot_patient(pts, pid,
+                             save_dir=save_dir,
+                             source_type="union")
+            except Exception as e:
+                print(f"  ERROR for {pid}: {e}")
+
+    # ── Handle --ply direct file paths ───────────────────────────────────────
+    if args.ply:
+        for ply_path in args.ply:
+
+            pid = os.path.splitext(
+                os.path.basename(ply_path)
+            )[0]
+
+            pts = load_ply(ply_path)
+
+            if args.stats:
+                print_stats(pts, pid)
+
+            plot_patient(
+                pts,
+                pid,
+                save_dir=save_dir,
+                source_type="custom"
+            )
+    
+    if args.dir:
+
+        ply_files = sorted([
+            os.path.join(args.dir, f)
+            for f in os.listdir(args.dir)
+            if f.endswith(".ply")
+        ])
+
+        for ply_path in ply_files:
+
+            pid = os.path.splitext(
+                os.path.basename(ply_path)
+            )[0]
+
+            print(f"\nLoading {ply_path}")
+
+            try:
+
+                pts = load_ply(ply_path)
+
+                if args.stats:
+                    print_stats(pts, pid)
+
+                plot_patient(
+                    pts,
+                    pid,
+                    save_dir=save_dir,
+                    source_type="custom"
+                )
+
+            except Exception as e:
+                print(f"ERROR for {pid}: {e}")
+
+    if args.ply or args.dir:
+        return
+
+    # ── Handle -p patient IDs and --all ──────────────────────────────────────
+    targets = resolve_patients(args.patients, args.all,args.source)
+
+    if not targets and not args.seg and not args.ply:
+        print("No valid point clouds found. Run run_preprocess.py first.")
+        return
+
+    for _, (pid, source_type, path) in targets.items():
+        print(f"\nLoading {pid} from {path}...")
+        try:
+            pts = load_ply(path)
+            if args.stats:
+                print_stats(pts, pid)
+            plot_patient(pts, pid,
+                         save_dir=save_dir,
+                         source_type=source_type)
+        except Exception as e:
+            print(f"  ERROR for {pid}: {e}")
 
 
 if __name__ == "__main__":

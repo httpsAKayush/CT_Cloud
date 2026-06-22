@@ -5,6 +5,8 @@ BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
 DATASET_DIR  = os.path.expanduser("~/Downloads/Totalsegmentator_dataset_small_v201/wholebody")
 OUTPUT_DIR   = os.path.join(BASE_DIR, "data")
 PLY_DIR      = os.path.join(OUTPUT_DIR, "pointclouds")
+UNION_PLY_DIR  = os.path.join(PLY_DIR, "unionclouds")
+RAW_PLY_DIR  = os.path.join(PLY_DIR, "rawclouds")
 MODEL_DIR    = os.path.join(OUTPUT_DIR, "models")
 
 # ── PATIENTS ─────────────────────────────────────────────────────────────────
@@ -19,6 +21,7 @@ MARCHING_CUBES_LEVEL = 0.5
 # "ct_threshold" → threshold raw CT volume (experimental)
 SURFACE_MODE      = "segmentation"
 CT_THRESHOLD_HU   = -200    # only used in ct_threshold mode
+
 
 # ── ALIGNMENT ────────────────────────────────────────────────────────────────
 TARGET_UP_AXIS    = [0, 1, 0]   # Y up (Unity convention)

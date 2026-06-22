@@ -1,34 +1,59 @@
-cd ~/ct_pipeline
+# Visualize one patient's union cloud
+python view/visualize.py -p s1388 --source union
 
-# View one patient (interactive)
-python view/visualize.py -p s1388
+# Visualize one patient's raw/full-body cloud
+python view/visualize.py -p s1388 --source raw
 
-# View multiple
-python view/visualize.py -p s1388 s1371 s1369
+# Visualize both union and raw cloud for one patient
+python view/visualize.py -p s1388 --source both
 
-# View all
-python view/visualize.py --all
 
-# Save all to view/output/
-python view/visualize.py --all --save
+# Visualize multiple patients (union)
+python view/visualize.py -p s1388 s1371 s1369 --source union
 
-# Save to custom folder
-python view/visualize.py -p s1388 --save --save-dir ~/Desktop/views
+# Visualize multiple patients (raw)
+python view/visualize.py -p s1388 s1371 s1369 --source raw
 
-# Point at a custom .ply file directly
+# Visualize multiple patients (both)
+python view/visualize.py -p s1388 s1371 s1369 --source both
+
+
+# Visualize all union clouds
+python view/visualize.py --all --source union
+
+# Visualize all raw clouds
+python view/visualize.py --all --source raw
+
+# Visualize all union + raw clouds
+python view/visualize.py --all --source both
+
+
+# Save all union cloud views to output/union/
+python view/visualize.py --all --source union --save
+
+# Save all raw cloud views to output/raw/
+python view/visualize.py --all --source raw --save
+
+# Save all union + raw cloud views
+python view/visualize.py --all --source both --save
+
+
+# Save to custom directory
+python view/visualize.py --all --source both --save --save-dir ~/Desktop/views
+
+
+# Visualize a custom .ply file
 python view/visualize.py --ply /path/to/file.ply
 
-# Just print stats, no plot
-python view/visualize.py --all --no-plot 2>/dev/null
+# Visualize multiple custom .ply files
+python view/visualize.py --ply file1.ply file2.ply file3.ply
 
-# Point at patient folder (auto-finds segmentations/ inside)
-python view/visualize.py --seg ~/Downloads/Totalsegmentator_dataset_small_v201/wholebody/s1388
+# Visualize all .ply files in a folder
+python view/visualize.py --dir /path/to/ply_folder
 
-# Point at segmentations folder directly
-python view/visualize.py --seg ~/Downloads/Totalsegmentator_dataset_small_v201/wholebody/s1388/segmentations
 
-# Multiple patients via folder
-python view/visualize.py --seg ~/Downloads/.../s1388 ~/Downloads/.../s1371
+# Generate point cloud directly from segmentation folder and visualize
+python view/visualize.py --seg /path/to/s1388
 
-# Mix --seg and --p together
-python view/visualize.py --seg ~/Downloads/.../s1388 -p s1371 --save
+# Generate from segmentation folder and save views
+python view/visualize.py --seg /path/to/s1388 --save
