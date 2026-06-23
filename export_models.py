@@ -225,6 +225,34 @@ def process_patient(patient_id, verbose=True):
     os.makedirs(MODEL_DIR, exist_ok=True)
     os.makedirs(UNION_MODEL_DIR, exist_ok=True)
     #os.makedirs(RAW_MODEL_DIR, exist_ok=True)
+    # ── Center all meshes around origin ──────────────────────────────────────
+    all_verts = []
+    for geom in scene.geometry.values():
+        all_verts.append(np.array(geom.vertices))
+
+    if all_verts:
+        all_verts_np = np.vstack(all_verts)
+        
+        # Bounding box center (more stable than mean for uneven meshes)
+        bbox_min = all_verts_np.min(axis=0)
+        bbox_max = all_verts_np.max(axis=0)
+        center   = (bbox_min + bbox_max) / 2.0
+
+        if verbose:
+            print(f"  Centering scene (bbox center: {center.round(1)})")
+
+        centered_scene = trimesh.Scene()
+        for name, geom in scene.geometry.items():
+            new_verts     = (np.array(geom.vertices) - center) * 0.0025
+            centered_mesh = trimesh.Trimesh(
+                vertices  = new_verts,
+                faces     = np.array(geom.faces),
+                process   = False
+            )
+            centered_mesh.visual = geom.visual
+            centered_scene.add_geometry(centered_mesh, node_name=name)
+        scene = centered_scene
+            
     scene.export(out_path)
 
     if verbose:
@@ -304,6 +332,13 @@ def process_patient_raw(patient_id, verbose=True):
 
     os.makedirs(MODEL_DIR, exist_ok=True)
     os.makedirs(RAW_MODEL_DIR, exist_ok=True)
+    # Center raw mesh
+    pts = result.vertices
+    center = pts.mean(axis=0)
+    result.vertices -= center
+    if verbose:
+        print(f"  Centered raw mesh (offset: {center.round(1)})")
+
     scene.export(out_path)
 
     if verbose:

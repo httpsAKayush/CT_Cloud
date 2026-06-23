@@ -58,3 +58,23 @@ python export_models.py --patients s1388 --raw
 python export_models.py
 python export_models.py --raw
 ```
+
+
+# server
+```
+ip addr | grep "inet " | grep -v 127.0.0.1               ░▒▓ ✔ ▓▒░
+```
+
+```
+# Just serve models (Quest can download manually)
+python server.py --quest-ip 192.168.1.X
+
+# Interactive mode — type patient ID to send to Quest
+python server.py --quest-ip 192.168.1.X --interactive
+
+# Full pipeline — real scan → match → send to Quest
+python server.py --quest-ip 192.168.1.X --real-scan /path/to/scan.ply
+
+# Test HTTP server is working
+curl http://localhost:8080/
+```
