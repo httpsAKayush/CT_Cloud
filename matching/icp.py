@@ -53,95 +53,156 @@ def refine_icp(source, target, initial_transform, voxel_size=5.0):
 
 def extract_body_features(pcd):
     """
-    Extract anthropometric features from point cloud.
-    These are body measurements that distinguish patients:
-    height, shoulder width, hip width, torso depth, waist width.
-    These work even when ICP fails on sparse skeletal clouds.
+    Extract discriminative anthropometric features from point cloud.
+    Uses width profile at multiple heights + shape ratios.
+    Returns 46-dimensional feature vector.
     """
     pts = np.asarray(pcd.points)
     height = pts[:, 1].max() - pts[:, 1].min()
-
-    # Normalize Y to 0-1 for relative measurements
     y_norm = (pts[:, 1] - pts[:, 1].min()) / height
 
-    # Shoulder region (70-85% height)
-    shoulder_pts = pts[(y_norm > 0.70) & (y_norm < 0.85)]
-    shoulder_width = shoulder_pts[:, 0].max() - shoulder_pts[:, 0].min() \
-        if len(shoulder_pts) > 10 else 0
+    def width_at(y_low, y_high, axis=0):
+        band = pts[(y_norm >= y_low) & (y_norm < y_high)]
+        if len(band) < 5:
+            return 0.0
+        return float(band[:, axis].max() - band[:, axis].min())
 
-    # Hip region (35-50% height)
-    hip_pts = pts[(y_norm > 0.35) & (y_norm < 0.50)]
-    hip_width = hip_pts[:, 0].max() - hip_pts[:, 0].min() \
-        if len(hip_pts) > 10 else 0
+    def depth_at(y_low, y_high):
+        return width_at(y_low, y_high, axis=2)
 
-    # Waist region (55-65% height)
-    waist_pts = pts[(y_norm > 0.55) & (y_norm < 0.65)]
-    waist_width = waist_pts[:, 0].max() - waist_pts[:, 0].min() \
-        if len(waist_pts) > 10 else 0
-
-    # Torso depth (front-back, Z axis) at chest level
-    chest_pts = pts[(y_norm > 0.65) & (y_norm < 0.80)]
-    chest_depth = chest_pts[:, 2].max() - chest_pts[:, 2].min() \
-        if len(chest_pts) > 10 else 0
-
-    # Overall body width
-    body_width = pts[:, 0].max() - pts[:, 0].min()
-
-    return np.array([
-        height,
-        shoulder_width,
-        hip_width,
-        waist_width,
-        chest_depth,
-        body_width,
-        shoulder_width / height if height > 0 else 0,   # shoulder ratio
-        hip_width / height if height > 0 else 0,        # hip ratio
-        waist_width / hip_width if hip_width > 0 else 0 # waist-hip ratio
+    # ── Width profile at 20 height slices (every 5%) ─────────────────────────
+    width_profile = np.array([
+        width_at(i * 0.05, (i + 1) * 0.05) for i in range(20)
     ])
+
+    # ── Depth profile at 10 height slices (every 10%) ────────────────────────
+    depth_profile = np.array([
+        depth_at(i * 0.10, (i + 1) * 0.10) for i in range(10)
+    ])
+
+    # ── Key anatomical measurements ───────────────────────────────────────────
+    shoulder_w   = width_at(0.72, 0.82)
+    chest_w      = width_at(0.60, 0.72)
+    waist_w      = width_at(0.50, 0.60)
+    hip_w        = width_at(0.38, 0.50)
+    thigh_w      = width_at(0.20, 0.35)
+    ankle_w      = width_at(0.05, 0.15)
+    chest_d      = depth_at(0.60, 0.72)
+    abdomen_d    = depth_at(0.45, 0.60)
+
+    # ── Shape ratios (scale invariant) ───────────────────────────────────────
+    waist_hip_ratio    = waist_w   / (hip_w      + 1e-8)
+    shoulder_hip_ratio = shoulder_w / (hip_w     + 1e-8)
+    chest_waist_ratio  = chest_w   / (waist_w    + 1e-8)
+    depth_width_ratio  = chest_d   / (chest_w    + 1e-8)
+    thigh_hip_ratio    = thigh_w   / (hip_w      + 1e-8)
+
+    # ── Waist definition ─────────────────────────────────────────────────────
+    waist_definition = 1.0 - (waist_w / (max(shoulder_w, hip_w) + 1e-8))
+
+    # ── Width variance ───────────────────────────────────────────────────────
+    width_variance = float(np.std(width_profile))
+    width_skew     = float(np.mean(width_profile[:10]) /
+                           (np.mean(width_profile[10:]) + 1e-8))
+
+    # ── Scalar features ───────────────────────────────────────────────────────
+    scalar_features = np.array([
+        shoulder_w, chest_w, waist_w, hip_w, thigh_w, ankle_w,
+        chest_d, abdomen_d,
+        waist_hip_ratio, shoulder_hip_ratio, chest_waist_ratio,
+        depth_width_ratio, thigh_hip_ratio,
+        waist_definition, width_variance, width_skew
+    ])
+
+    # ── Normalize profiles by height (scale invariant) ───────────────────────
+    # width_profile_norm = width_profile / (height + 1e-8)
+    # depth_profile_norm = depth_profile / (height + 1e-8)
+
+    # ── Final 46-dim vector: 16 scalars + 20 width + 10 depth ────────────────
+    #return np.concatenate([scalar_features, width_profile_norm, depth_profile_norm])
+    # Weight width profile 3x more — it's the most discriminative feature
+    #return np.concatenate([scalar_features, width_profile_norm * 3.0, depth_profile_norm * 1.5])
+
+# ── Zone-weighted width profile ───────────────────────────────────────────
+    # Amplify most discriminative zones (waist/hip/shoulder)
+    ZONE_WEIGHTS = np.array([
+        1.0, 1.0, 1.5, 1.5, 2.0,   # 0-25%  feet/ankles/knees
+        2.5, 2.5, 2.0, 2.0, 2.5,   # 25-50% thighs/hips
+        3.0, 3.0, 2.5, 2.5, 2.0,   # 50-75% waist/chest (most discriminative)
+        3.0, 3.0, 2.5, 1.5, 1.0,   # 75-100% shoulders/arms/head
+    ])
+
+    width_profile_weighted = width_profile * ZONE_WEIGHTS
+    width_profile_norm     = width_profile_weighted / (height + 1e-8)
+    depth_profile_norm     = depth_profile / (height + 1e-8)
+
+    return np.concatenate([scalar_features, width_profile_norm, depth_profile_norm])
 
 
 def feature_similarity(feat_source, feat_target):
-    """
-    Compute similarity between two feature vectors.
-    Returns 0.0-1.0 (higher = more similar).
-    """
-    # Normalize features
     eps = 1e-8
-    norm_s = feat_source / (np.linalg.norm(feat_source) + eps)
-    norm_t = feat_target / (np.linalg.norm(feat_target) + eps)
+    
+    # Split features
+    scalars_s = feat_source[:16]
+    scalars_t = feat_target[:16]
+    width_s   = feat_source[16:36]
+    width_t   = feat_target[16:36]
+    depth_s   = feat_source[36:46]
+    depth_t   = feat_target[36:46]
 
-    # Cosine similarity
-    cosine = np.dot(norm_s, norm_t)
+    # ── Width profile similarity (most discriminative) ────────────────────────
+    # Use L2 distance normalized by profile magnitude — penalizes shape differences
+    width_diff  = np.abs(width_s - width_t)
+    width_scale = np.maximum(np.abs(width_t), eps)
+    width_rel   = width_diff / width_scale
+    width_score = float(np.exp(-width_rel.mean() * 3.0))  # exponential penalty
 
-    # Also compute relative difference per feature
-    rel_diff = np.abs(feat_source - feat_target) / (np.abs(feat_target) + eps)
-    rel_score = 1.0 - np.clip(rel_diff.mean(), 0, 1)
+    # ── Depth profile similarity ──────────────────────────────────────────────
+    depth_diff  = np.abs(depth_s - depth_t)
+    depth_scale = np.maximum(np.abs(depth_t), eps)
+    depth_rel   = depth_diff / depth_scale
+    depth_score = float(np.exp(-depth_rel.mean() * 3.0))
 
-    # Combine both
-    return float((cosine + rel_score) / 2.0)
+    # ── Scalar ratios similarity ──────────────────────────────────────────────
+    # Focus on ratios (indices 8-15) which are scale-invariant
+    ratios_s = scalars_s[8:]
+    ratios_t = scalars_t[8:]
+    ratio_diff  = np.abs(ratios_s - ratios_t)
+    ratio_scale = np.maximum(np.abs(ratios_t), eps)
+    ratio_score = float(np.exp(-( ratio_diff / ratio_scale).mean() * 2.0))
 
+    # ── Flip detection ────────────────────────────────────────────────────────
+    width_flipped     = width_s[::-1]
+    width_diff_flip   = np.abs(width_flipped - width_t)
+    width_score_flip  = float(np.exp(-(width_diff_flip / width_scale).mean() * 3.0))
+    if width_score_flip > width_score + 0.05:
+        width_score = max(0, width_score - (width_score_flip - width_score) * 0.5)
+
+    # ── Combined (width profile carries most weight) ──────────────────────────
+    combined = 0.60 * width_score + 0.25 * depth_score + 0.15 * ratio_score
+
+    return float(combined)
 
 def match_pointclouds(source_pcd, target_pcd, voxel_size=5.0, verbose=True):
     """
-    Full matching pipeline combining:
-    1. Anthropometric feature matching (robust to sparse clouds)
-    2. ICP geometric matching (refines alignment)
-
-    Returns combined score weighted 60% features + 40% ICP.
+    Full matching pipeline:
+    60% anthropometric features + 40% ICP geometric matching.
     """
     # ── Feature-based matching ────────────────────────────────────────────────
     if verbose:
         print(f"    Extracting body features...")
-    feat_src = extract_body_features(source_pcd)
-    feat_tgt = extract_body_features(target_pcd)
+    feat_src   = extract_body_features(source_pcd)
+    feat_tgt   = extract_body_features(target_pcd)
     feat_score = feature_similarity(feat_src, feat_tgt)
 
     if verbose:
         print(f"    Feature similarity: {feat_score:.4f}")
-        print(f"    Source features: h={feat_src[0]:.0f} sw={feat_src[1]:.0f} "
-              f"hw={feat_src[2]:.0f} ww={feat_src[3]:.0f}")
-        print(f"    Target features: h={feat_tgt[0]:.0f} sw={feat_tgt[1]:.0f} "
-              f"hw={feat_tgt[2]:.0f} ww={feat_tgt[3]:.0f}")
+        print(f"    Source: h={feat_src[0]+feat_src[1]:.0f} "
+              f"sw={feat_src[0]:.0f} hw={feat_src[3]:.0f} "
+              f"ww={feat_src[2]:.0f} whr={feat_src[8]:.2f}")
+        print(f"    Target: h={feat_tgt[0]+feat_tgt[1]:.0f} "
+              f"sw={feat_tgt[0]:.0f} hw={feat_tgt[3]:.0f} "
+              f"ww={feat_tgt[2]:.0f} whr={feat_tgt[8]:.2f}")
 
     # ── ICP geometric matching ────────────────────────────────────────────────
     if verbose:
@@ -153,7 +214,6 @@ def match_pointclouds(source_pcd, target_pcd, voxel_size=5.0, verbose=True):
         print(f"    Global registration (RANSAC)...")
     global_result = global_registration(src_down, tgt_down,
                                         src_fpfh, tgt_fpfh, voxel_size)
-
     if verbose:
         print(f"    ICP refinement...")
     icp_result = refine_icp(source_pcd, target_pcd,
@@ -165,16 +225,21 @@ def match_pointclouds(source_pcd, target_pcd, voxel_size=5.0, verbose=True):
         print(f"    ICP fitness: {icp_score:.4f}")
 
     # ── Combined score ────────────────────────────────────────────────────────
-    combined = 0.6 * feat_score + 0.4 * icp_score
+    #combined = 0.6 * feat_score + 0.4 * icp_score
+    # Only trust ICP if it found good correspondences (fitness > 0.05)
+    icp_weight = 0.4 if icp_score > 0.05 else 0.1
+    feat_weight = 1.0 - icp_weight
+    combined = feat_weight * feat_score + icp_weight * icp_score
+    #
 
     if verbose:
-        print(f"    Combined score: {combined:.4f} "
-              f"(feat={feat_score:.3f} × 0.6 + icp={icp_score:.3f} × 0.4)")
+        print(f"    Combined: {combined:.4f} "
+              f"(feat={feat_score:.3f}×0.6 + icp={icp_score:.3f}×0.4)")
 
     return {
-        "fitness":       combined,
-        "feat_score":    feat_score,
-        "icp_score":     icp_score,
-        "rmse":          icp_result.inlier_rmse,
-        "transform":     icp_result.transformation
+        "fitness":    combined,
+        "feat_score": feat_score,
+        "icp_score":  icp_score,
+        "rmse":       icp_result.inlier_rmse,
+        "transform":  icp_result.transformation
     }
