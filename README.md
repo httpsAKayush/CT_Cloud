@@ -1,7 +1,13 @@
-# Quick Setup
+# Quick Setup(for Conda)
 ```
 conda create -n ct_pipeline python=3.12
 conda activate ct_pipeline
+pip install -r requirements.txt
+```
+# With Python enve
+```
+python -m venv ct_pipeline
+ct_pipeline\Scripts\activate
 pip install -r requirements.txt
 ```
 
