@@ -27,6 +27,8 @@ data/pointclouds/unionclouds/*.ply
 data/models/*.glb
 data/models/*.fbx
 data/models/*.obj
+data/models/rawmodels/*.glb
+data/models/unionmodels/*.glb
 
 # Test outputs
 test/pointclouds/

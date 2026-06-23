@@ -23,6 +23,7 @@ pyhton run_preprocess.py --raw                   # all raw patients
 
 
 # ── MATCHING ─────────────────────────────────────────────────────────────────
+```
 # Test with fake scan from s1388 (should match itself)
 python run_matching.py --fake s1388
 
@@ -43,3 +44,17 @@ python run_matching.py --fake s1388 --threshold 0.80 --retries 5
 
 # Tune ICP voxel size (smaller = more precise but slower)
 python run_matching.py --fake s1388 --voxel-size 5.0
+```
+
+# export model
+```
+# Export segmented organs (default)
+python export_models.py --patients s1388
+
+# Export raw CT surface
+python export_models.py --patients s1388 --raw
+
+# Export both for all patients
+python export_models.py
+python export_models.py --raw
+```

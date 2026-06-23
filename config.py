@@ -8,6 +8,8 @@ PLY_DIR      = os.path.join(OUTPUT_DIR, "pointclouds")
 UNION_PLY_DIR  = os.path.join(PLY_DIR, "unionclouds")
 RAW_PLY_DIR  = os.path.join(PLY_DIR, "rawclouds")
 MODEL_DIR    = os.path.join(OUTPUT_DIR, "models")
+RAW_MODEL_DIR    = os.path.join(MODEL_DIR, "rawmodels")
+UNION_MODEL_DIR    = os.path.join(MODEL_DIR, "unionmodels")
 
 # ── PATIENTS ─────────────────────────────────────────────────────────────────
 PATIENTS = ["s1369", "s1371", "s1384", "s1388", "s1397"]
