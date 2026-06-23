@@ -2159,3 +2159,552 @@ python run_matching.py --fake s1371
 python run_matching.py --real /path/to/real_scan.ply
 Run the first command and paste the output — we want to see the full ranking of all 5 patients and whether s1388 comes out on top when we fake-scan from s1388.
 
+just keep this matching at hold, and do next thing11:04 AMClaude responded: Got it — matching is on hold.Got it — matching is on hold.
+What's next?You said: you tell meyou tell me11:04 AMClaude responded: Based on where we are, the logical next steps in order are:Based on where we are, the logical next steps in order are:
+
+Export all 5 patient models as GLB from Blender — the segmented organ meshes for each patient, ready to be served over HTTP to the Quest
+Build the PC-side HTTP + TCP server — Python script that serves GLB models on port 8080 and sends the matched patient ID to the Quest over TCP
+Build the Unity GLB runtime loader — Quest receives patient ID over TCP → downloads GLB from PC → loads it into the AR scene dynamically
+Wire everything together — preprocess → match → serve → load → display in AR
+Fix the NDK build issues on Manjaro so we can actually deploy to Quest
+
+Which of these do you want to tackle next?You said: as need to be doneas need to be done11:04 AMClaude responded: Start with Step 1 — Export all 5 patient models as GLB from Blender.Start with Step 1 — Export all 5 patient models as GLB from Blender.
+We already did this for one patient (s1388) earlier as FBX. Now we need to do it for all 5 patients as GLB (since GLB is needed for runtime loading in Unity).
+The Blender automation script we wrote earlier processed one patient at a time. Let's write a batch version that processes all 5.
+But first — do you still have the per-organ OBJ files exported from 3D Slicer for all 5 patients, or only for s1388? Run:
+bashls ~/anatomy_export/ 2>/dev/null || echo "not found"
+ls ~/ct_pipeline/data/models/ 2>/dev/null
+This tells us if we need to re-export from Slicer or if we can go straight to Blender processing.You said: no i dont haveexcerpt_from_previous_claude_message.txt1 linetxtno i dont have11:07 AMClaude responded: Okay — so we need to re-export OBJ files from 3D Slicer for all 5 patients.Okay — so we need to re-export OBJ files from 3D Slicer for all 5 patients. But this time we'll do it efficiently with a Python script run directly inside Slicer's Python console, processing all 5 patients in one go instead of manually clicking through the GUI.
+First, check disk space:
+bashdf -h
+We need roughly 2-3GB free for the OBJ exports of all 5 patients. If space is tight we'll export → process in Blender → delete OBJs → move to next patient, one at a time.
+Paste df -h output and we'll plan accordingly.You said: so i cant do it without 3dslicer?so i cant do it without 3dslicer?11:10 AMClaude responded: You don't need 3D Slicer at all — we can do everything in Python directly.You don't need 3D Slicer at all — we can do everything in Python directly. We already have:
+
+All 5 patients' segmentation .nii.gz files
+Python pipeline that reads them (nibabel, scikit-image, open3d)
+
+We can go straight from .nii.gz → decimated meshes → GLB without touching Slicer or Blender using Python alone.
+The pipeline:
+segmentation .nii.gz files
+        ↓
+nibabel reads each mask
+        ↓
+marching cubes → mesh per organ (scikit-image)
+        ↓
+decimate mesh (open3d or trimesh)
+        ↓
+merge all organs under one root
+        ↓
+export as GLB (trimesh)
+One extra package needed:
+bashconda activate ct_pipeline
+pip install trimesh
+This replaces the entire Slicer → Blender → export workflow with a single Python script. Want me to write it?You said: yesyes11:12 AMClaude responded: First install trimesh:First install trimesh:
+bashconda activate ct_pipeline
+pip install trimesh
+Then save this as ~/ct_pipeline/export_models.py:
+pythonimport os
+import sys
+import numpy as np
+import nibabel as nib
+from skimage import measure
+import trimesh
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import DATASET_DIR, PATIENTS, MODEL_DIR
+
+# ── SETTINGS ─────────────────────────────────────────────────────────────────
+DECIMATE_FACE_COUNT = 5000   # max faces per organ after decimation
+SKIP_SMALL_ORGANS   = True   # skip organs with < MIN_VOXELS voxels
+MIN_VOXELS          = 500    # minimum voxel count to include organ
+
+# Organ groups and colors (R, G, B, A) 0-255
+ORGAN_COLORS = {
+    # Major organs
+    "liver":                    (194, 100,  60, 180),
+    "spleen":                   (160,  60, 120, 180),
+    "kidney_left":              (210, 140,  80, 180),
+    "kidney_right":             (210, 140,  80, 180),
+    "pancreas":                 (220, 180, 100, 180),
+    "stomach":                  (180, 160, 120, 180),
+    "gallbladder":              (180, 200,  80, 180),
+    "heart":                    (200,  60,  60, 200),
+    "small_bowel":              (200, 160, 140, 160),
+    "colon":                    (180, 130, 100, 160),
+    "duodenum":                 (190, 150, 110, 160),
+    "urinary_bladder":          (100, 160, 200, 160),
+    "esophagus":                (160, 100, 100, 160),
+    "trachea":                  (140, 180, 200, 160),
+    "spinal_cord":              (220, 220, 160, 180),
+    # Lungs
+    "lung_upper_lobe_left":     (140, 180, 220, 150),
+    "lung_lower_lobe_left":     (140, 180, 220, 150),
+    "lung_upper_lobe_right":    (140, 180, 220, 150),
+    "lung_lower_lobe_right":    (140, 180, 220, 150),
+    "lung_middle_lobe_right":   (140, 180, 220, 150),
+    # Vessels
+    "aorta":                    (220,  60,  60, 200),
+    "inferior_vena_cava":       ( 60,  60, 220, 200),
+    "portal_vein_and_splenic_vein": ( 80, 100, 200, 180),
+    "pulmonary_vein":           (100, 100, 220, 180),
+    # Adrenal
+    "adrenal_gland_left":       (180, 200, 140, 160),
+    "adrenal_gland_right":      (180, 200, 140, 160),
+    # Default for everything else
+    "__default__":              (200, 200, 200, 160),
+}
+
+# Organs to merge into groups
+MERGE_GROUPS = {
+    "skeleton": [
+        "vertebrae_L1", "vertebrae_L2", "vertebrae_L3", "vertebrae_L4", "vertebrae_L5",
+        "vertebrae_S1", "sacrum",
+        "vertebrae_T1", "vertebrae_T2", "vertebrae_T3", "vertebrae_T4",
+        "vertebrae_T5", "vertebrae_T6", "vertebrae_T7", "vertebrae_T8",
+        "vertebrae_T9", "vertebrae_T10", "vertebrae_T11", "vertebrae_T12",
+        "vertebrae_C1", "vertebrae_C2", "vertebrae_C3", "vertebrae_C4",
+        "vertebrae_C5", "vertebrae_C6", "vertebrae_C7",
+        "rib_left_1",  "rib_left_2",  "rib_left_3",  "rib_left_4",
+        "rib_left_5",  "rib_left_6",  "rib_left_7",  "rib_left_8",
+        "rib_left_9",  "rib_left_10", "rib_left_11", "rib_left_12",
+        "rib_right_1", "rib_right_2", "rib_right_3", "rib_right_4",
+        "rib_right_5", "rib_right_6", "rib_right_7", "rib_right_8",
+        "rib_right_9", "rib_right_10","rib_right_11","rib_right_12",
+        "sternum", "costal_cartilages",
+        "hip_left", "hip_right",
+        "humerus_left", "humerus_right",
+        "femur_left", "femur_right",
+        "scapula_left", "scapula_right",
+        "clavicula_left", "clavicula_right",
+        "skull",
+    ],
+    "left_lung": [
+        "lung_upper_lobe_left", "lung_lower_lobe_left"
+    ],
+    "right_lung": [
+        "lung_upper_lobe_right", "lung_lower_lobe_right", "lung_middle_lobe_right"
+    ],
+    "muscles": [
+        "gluteus_maximus_left",  "gluteus_maximus_right",
+        "gluteus_medius_left",   "gluteus_medius_right",
+        "gluteus_minimus_left",  "gluteus_minimus_right",
+        "iliopsoas_left",        "iliopsoas_right",
+        "autochthon_left",       "autochthon_right",
+    ],
+}
+
+# Skeleton color
+ORGAN_COLORS["skeleton"] = (220, 210, 180, 200)
+ORGAN_COLORS["left_lung"] = (140, 180, 220, 150)
+ORGAN_COLORS["right_lung"] = (140, 180, 220, 150)
+ORGAN_COLORS["muscles"] = (180, 120, 100, 140)
+
+# ── HELPERS ───────────────────────────────────────────────────────────────────
+
+def nii_to_mesh(nii_path, decimate=True, verbose=False):
+    """Load a .nii.gz mask and convert to trimesh Mesh."""
+    img  = nib.load(nii_path)
+    data = img.get_fdata()
+    affine = img.affine
+
+    if data.sum() < MIN_VOXELS:
+        return None
+
+    try:
+        verts, faces, _, _ = measure.marching_cubes(data, level=0.5)
+    except Exception:
+        return None
+
+    if len(faces) == 0:
+        return None
+
+    # Voxel → world space
+    verts_h     = np.hstack([verts, np.ones((len(verts), 1))])
+    verts_world = (affine @ verts_h.T).T[:, :3]
+
+    mesh = trimesh.Trimesh(vertices=verts_world, faces=faces, process=False)
+
+    if decimate and len(faces) > DECIMATE_FACE_COUNT:
+        ratio = DECIMATE_FACE_COUNT / len(faces)
+        mesh  = mesh.simplify_quadric_decimation(int(len(faces) * ratio))
+
+    return mesh
+
+
+def get_color(organ_name):
+    """Get RGBA color for an organ."""
+    for key, color in ORGAN_COLORS.items():
+        if key in organ_name.lower():
+            return color
+    return ORGAN_COLORS["__default__"]
+
+
+def process_patient(patient_id, verbose=True):
+    """
+    Process all segmentation masks for one patient.
+    Returns path to saved GLB file.
+    """
+    seg_dir  = os.path.join(DATASET_DIR, patient_id, "segmentations")
+    out_path = os.path.join(MODEL_DIR, f"{patient_id}.glb")
+
+    if not os.path.exists(seg_dir):
+        print(f"  ERROR: segmentation dir not found: {seg_dir}")
+        return None
+
+    if verbose:
+        print(f"\n{'='*50}")
+        print(f"  Processing {patient_id}...")
+
+    nii_files = sorted([
+        f for f in os.listdir(seg_dir) if f.endswith(".nii.gz")
+    ])
+
+    # Build reverse lookup: organ_name → group_name
+    organ_to_group = {}
+    for group, members in MERGE_GROUPS.items():
+        for member in members:
+            organ_to_group[member] = group
+
+    # Collect meshes per group and per individual organ
+    group_meshes = {g: [] for g in MERGE_GROUPS}
+    individual_meshes = {}
+
+    for nii_file in nii_files:
+        organ_name = nii_file.replace(".nii.gz", "")
+        nii_path   = os.path.join(seg_dir, nii_file)
+
+        if verbose:
+            print(f"    {organ_name}...", end=" ", flush=True)
+
+        mesh = nii_to_mesh(nii_path, verbose=verbose)
+
+        if mesh is None:
+            if verbose:
+                print("skipped (too small)")
+            continue
+
+        if verbose:
+            print(f"{len(mesh.faces)} faces")
+
+        # Check if this organ belongs to a merge group
+        group = organ_to_group.get(organ_name)
+        if group:
+            group_meshes[group].append(mesh)
+        else:
+            individual_meshes[organ_name] = mesh
+
+    # Merge group meshes
+    scene = trimesh.Scene()
+
+    for group_name, meshes in group_meshes.items():
+        if not meshes:
+            continue
+        merged = trimesh.util.concatenate(meshes)
+        # Decimate merged skeleton (can be very heavy)
+        if group_name == "skeleton" and len(merged.faces) > DECIMATE_FACE_COUNT * 3:
+            ratio   = (DECIMATE_FACE_COUNT * 3) / len(merged.faces)
+            merged  = merged.simplify_quadric_decimation(
+                          int(len(merged.faces) * ratio))
+        color = get_color(group_name)
+        merged.visual = trimesh.visual.ColorVisuals(
+            mesh=merged,
+            vertex_colors=np.tile(color, (len(merged.vertices), 1))
+        )
+        scene.add_geometry(merged, node_name=group_name)
+        if verbose:
+            print(f"    Group '{group_name}': {len(merged.faces)} faces")
+
+    # Add individual organs
+    for organ_name, mesh in individual_meshes.items():
+        color = get_color(organ_name)
+        mesh.visual = trimesh.visual.ColorVisuals(
+            mesh=mesh,
+            vertex_colors=np.tile(color, (len(mesh.vertices), 1))
+        )
+        scene.add_geometry(mesh, node_name=organ_name)
+
+    # Export
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    scene.export(out_path)
+
+    if verbose:
+        print(f"\n  Exported: {out_path}")
+        print(f"  Total geometries: {len(scene.geometry)}")
+
+    return out_path
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Export patient models as GLB")
+    parser.add_argument("--patients", nargs="+", default=PATIENTS,
+                        help="Patient IDs to export (default: all)")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Re-export even if GLB already exists")
+    args = parser.parse_args()
+
+    os.makedirs(MODEL_DIR, exist_ok=True)
+
+    for pid in args.patients:
+        out = os.path.join(MODEL_DIR, f"{pid}.glb")
+        if os.path.exists(out) and not args.overwrite:
+            print(f"  [{pid}] Already exists, skipping (use --overwrite to redo)")
+            continue
+        process_patient(pid)
+
+    print(f"\n{'='*50}")
+    print(f"Done. Models saved to: {MODEL_DIR}")
+    print(f"Files:")
+    for f in os.listdir(MODEL_DIR):
+        size = os.path.getsize(os.path.join(MODEL_DIR, f)) / (1024*1024)
+        print(f"  {f}: {size:.1f} MB")
+
+
+if __name__ == "__main__":
+    main()
+Run:
+bashconda activate ct_pipeline
+python export_models.py
+Or for one patient first to test:
+bashpython export_models.py --patients s1388
+This will take a few minutes per patient — marching cubes on 100+ masks is the slow part. Let me know what it outputs.You said: python exportmodels.python export_models.py --patients s1388                                                                     ░▒▓ ✔  ct_pipeline   ▓▒░
+==================================================
+  Processing s1388...
+    adrenal_gland_left... 2420 faces
+    adrenal_gland_right... 2338 faces
+    aorta... Traceback (most recent call last):
+  File "/home/zer0/ct_pipeline/export_models.py", line 259, in <module>
+    main()
+  File "/home/zer0/ct_pipeline/export_models.py", line 248, in main
+    process_patient(pid)
+  File "/home/zer0/ct_pipeline/export_models.py", line 174, in process_patient
+    mesh = nii_to_mesh(nii_path, verbose=verbose)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zer0/ct_pipeline/export_models.py", line 124, in nii_to_mesh
+    mesh  = mesh.simplify_quadric_decimation(int(len(faces) * ratio))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zer0/anaconda3/envs/ct_pipeline/lib/python3.12/site-packages/trimesh/base.py", line 2709, in simplify_quadric_decimation
+    from fast_simplification import simplify
+ModuleNotFoundError: No module named 'fast_simplification'Show less11:14 AMClaude responded: Quick fix:Quick fix:
+bashpip install fast-simplification
+Then run again:
+bashpython export_models.py --patients s1388You said: pip install fast-simplification                                                                    ░▒▓ 1 ✘  3s    ct_pipeline   ▓▒░pip install fast-simplification                                                                    ░▒▓ 1 ✘  3s    ct_pipeline   ▓▒░
+Collecting fast-simplification
+  Downloading fast_simplification-0.1.13-cp311-abi3-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (10 kB)
+Requirement already satisfied: numpy in /home/zer0/anaconda3/envs/ct_pipeline/lib/python3.12/site-packages (from fast-simplification) (2.4.6)
+Downloading fast_simplification-0.1.13-cp311-abi3-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (1.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.6/1.6 MB 2.7 MB/s  0:00:00
+Installing collected packages: fast-simplification
+Successfully installed fast-simplification-0.1.13
+░▒▓      ~/ct_pipeline     main !1 ?1 ▓▒░ python export_models.py --patients s1388                                                                     ░▒▓ ✔  ct_pipeline   ▓▒░
+==================================================
+  Processing s1388...
+    adrenal_gland_left... 2420 faces
+    adrenal_gland_right... 2338 faces
+    aorta... Traceback (most recent call last):
+  File "/home/zer0/ct_pipeline/export_models.py", line 259, in <module>
+    main()
+  File "/home/zer0/ct_pipeline/export_models.py", line 248, in main
+    process_patient(pid)
+  File "/home/zer0/ct_pipeline/export_models.py", line 174, in process_patient
+    mesh = nii_to_mesh(nii_path, verbose=verbose)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zer0/ct_pipeline/export_models.py", line 124, in nii_to_mesh
+    mesh  = mesh.simplify_quadric_decimation(int(len(faces) * ratio))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zer0/anaconda3/envs/ct_pipeline/lib/python3.12/site-packages/trimesh/base.py", line 2722, in simplify_quadric_decimation
+    vertices, faces = simplify(
+                      ^^^^^^^^^
+  File "/home/zer0/anaconda3/envs/ct_pipeline/lib/python3.12/site-packages/fast_simplification/utils.py", line 21, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zer0/anaconda3/envs/ct_pipeline/lib/python3.12/site-packages/fast_simplification/simplify.py", line 160, in simplify
+    target_count = _check_args(target_reduction, target_count, n_faces)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zer0/anaconda3/envs/ct_pipeline/lib/python3.12/site-packages/fast_simplification/simplify.py", line 27, in _check_args
+    raise ValueError("target_reduction must be between 0 and 1")
+ValueError: target_reduction must be between 0 and 1Show less11:16 AMClaude responded: The simplifyquadricdecimation in newer trimesh takes a targetcount differently.The simplify_quadric_decimation in newer trimesh takes a target_count differently. Fix in nii_to_mesh() — replace:
+pythonmesh = mesh.simplify_quadric_decimation(int(len(faces) * ratio))
+With:
+pythonmesh = mesh.simplify_quadric_decimation(face_count=DECIMATE_FACE_COUNT)
+And same fix for the skeleton decimation in process_patient() — replace:
+pythonmerged = merged.simplify_quadric_decimation(
+             int(len(merged.faces) * ratio))
+With:
+pythonmerged = merged.simplify_quadric_decimation(
+             face_count=DECIMATE_FACE_COUNT * 3)
+Run again:
+bashpython export_models.py --patients s1388You said: python exportmodels.python export_models.py --patients s1388                                                           ░▒▓ 1 ✘  3s    ct_pipeline   ▓▒░
+==================================================
+  Processing s1388...
+    adrenal_gland_left... Traceback (most recent call last):
+  File "/home/zer0/ct_pipeline/export_models.py", line 264, in <module>
+    main()
+  File "/home/zer0/ct_pipeline/export_models.py", line 253, in main
+    process_patient(pid)
+  File "/home/zer0/ct_pipeline/export_models.py", line 175, in process_patient
+    mesh = nii_to_mesh(nii_path, verbose=verbose)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/zer0/ct_pipeline/export_models.py", line 121, in nii_to_mesh
+    mesh = mesh.simplify_quadric_decimation(face_count=DECIMATE_FACE_COUNT)
+           ^^^^
+UnboundLocalError: cannot access local variable 'mesh' where it is not associated with a valueShow more11:18 AMClaude responded: The variable name mesh is used both for the trimesh object and as a parameter name conflict.The variable name mesh is used both for the trimesh object and as a parameter name conflict. Fix nii_to_mesh() — rename the trimesh object:
+pythondef nii_to_mesh(nii_path, decimate=True, verbose=False):
+    """Load a .nii.gz mask and convert to trimesh Mesh."""
+    img  = nib.load(nii_path)
+    data = img.get_fdata()
+    affine = img.affine
+
+    if data.sum() < MIN_VOXELS:
+        return None
+
+    try:
+        verts, faces, _, _ = measure.marching_cubes(data, level=0.5)
+    except Exception:
+        return None
+
+    if len(faces) == 0:
+        return None
+
+    # Voxel → world space
+    verts_h     = np.hstack([verts, np.ones((len(verts), 1))])
+    verts_world = (affine @ verts_h.T).T[:, :3]
+
+    result = trimesh.Trimesh(vertices=verts_world, faces=faces, process=False)
+
+    if decimate and len(result.faces) > DECIMATE_FACE_COUNT:
+        result = result.simplify_quadric_decimation(face_count=DECIMATE_FACE_COUNT)
+
+    return result
+Run again:
+bashpython export_models.py --patients s1388You said: also add to convert directly raw instead of segmentation folderalso add to convert directly raw instead of segmentation folder11:22 AMClaude responded: Add a --raw flag.Add a --raw flag. Update nii_to_mesh to handle raw CT and add the flag to main():
+Add this function after nii_to_mesh():
+pythondef process_patient_raw(patient_id, verbose=True):
+    """
+    Process raw CT volume for one patient using HU threshold.
+    Generates single outer-body mesh instead of per-organ segmentation.
+    Returns path to saved GLB file.
+    """
+    from scipy import ndimage
+    ct_path  = os.path.join(DATASET_DIR, patient_id, "ct.nii.gz")
+    out_path = os.path.join(MODEL_DIR, f"{patient_id}_raw.glb")
+
+    if not os.path.exists(ct_path):
+        print(f"  ERROR: CT file not found: {ct_path}")
+        return None
+
+    if verbose:
+        print(f"\n{'='*50}")
+        print(f"  Processing {patient_id} [raw CT]...")
+
+    img    = nib.load(ct_path)
+    data   = img.get_fdata()
+    affine = img.affine
+
+    if verbose:
+        print(f"  CT shape: {data.shape}, HU range: {data.min():.0f} to {data.max():.0f}")
+
+    # Threshold at -200 HU → binary body mask
+    binary = (data > -200).astype(np.uint8)
+
+    # Remove CT table — keep largest connected component
+    if verbose:
+        print(f"  Removing CT table...")
+    labeled, n = ndimage.label(binary)
+    sizes   = ndimage.sum(binary, labeled, range(1, n + 1))
+    largest = np.argmax(sizes) + 1
+    binary  = (labeled == largest).astype(np.uint8)
+
+    # Marching cubes
+    if verbose:
+        print(f"  Running marching cubes...")
+    verts, faces, _, _ = measure.marching_cubes(binary, level=0.5)
+
+    # World space
+    verts_h     = np.hstack([verts, np.ones((len(verts), 1))])
+    verts_world = (affine @ verts_h.T).T[:, :3]
+
+    result = trimesh.Trimesh(vertices=verts_world, faces=faces, process=False)
+
+    if verbose:
+        print(f"  Faces before decimation: {len(result.faces)}")
+
+    # Decimate heavily — raw CT mesh is huge
+    target = DECIMATE_FACE_COUNT * 5
+    if len(result.faces) > target:
+        result = result.simplify_quadric_decimation(face_count=target)
+
+    if verbose:
+        print(f"  Faces after decimation: {len(result.faces)}")
+
+    # Color — skin tone
+    color = (210, 180, 140, 200)
+    result.visual = trimesh.visual.ColorVisuals(
+        mesh=result,
+        vertex_colors=np.tile(color, (len(result.vertices), 1))
+    )
+
+    scene = trimesh.Scene()
+    scene.add_geometry(result, node_name="body_surface")
+
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    scene.export(out_path)
+
+    if verbose:
+        size = os.path.getsize(out_path) / (1024 * 1024)
+        print(f"  Exported: {out_path} ({size:.1f} MB)")
+
+    return out_path
+Then update main():
+pythondef main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Export patient models as GLB")
+    parser.add_argument("--patients", nargs="+", default=PATIENTS,
+                        help="Patient IDs to export (default: all)")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Re-export even if GLB already exists")
+    parser.add_argument("--raw", action="store_true",
+                        help="Export raw CT surface instead of segmented organs")
+    args = parser.parse_args()
+
+    os.makedirs(MODEL_DIR, exist_ok=True)
+
+    for pid in args.patients:
+        suffix = "_raw" if args.raw else ""
+        out    = os.path.join(MODEL_DIR, f"{pid}{suffix}.glb")
+
+        if os.path.exists(out) and not args.overwrite:
+            print(f"  [{pid}] Already exists, skipping (use --overwrite to redo)")
+            continue
+
+        if args.raw:
+            process_patient_raw(pid)
+        else:
+            process_patient(pid)
+
+    print(f"\n{'='*50}")
+    print(f"Done. Models saved to: {MODEL_DIR}")
+    print(f"Files:")
+    for f in sorted(os.listdir(MODEL_DIR)):
+        size = os.path.getsize(os.path.join(MODEL_DIR, f)) / (1024 * 1024)
+        print(f"  {f}: {size:.1f} MB")
+
+
+if __name__ == "__main__":
+    main()
+Usage:
+bash# Export segmented organs (default)
+python export_models.py --patients s1388
+
+# Export raw CT surface
+python export_models.py --patients s1388 --raw
+
+# Export both for all patients
+python export_models.py
+python export_models.py --raw
+Run and tell me what happens.You said: ok done so what nextok done so what next11:29 AMClaude responded: Next is Step 2 — PC-side HTTP + TCP server.Next is Step 2 — PC-side HTTP + TCP server.
+This is the Python script that runs on your PC during surgery:
+
+Serves GLB model files over HTTP (so Quest can download them)
+Receives the matched patient ID from the matching pipeline
+Sends that patient ID to the Quest over TCP
