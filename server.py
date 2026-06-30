@@ -11,7 +11,7 @@ from config import UNION_MODEL_DIR, REAL_SCAN_PATH
 
 # ── CONFIG ───────────────────────────────────────────────────────────────────
 
-TCP_PORT  = 5002   # Quest sends "match" trigger here, receives result here
+TCP_PORT  = 5012   # Quest sends "match" trigger here, receives result here
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -169,7 +169,7 @@ def start_udp_broadcaster(tcp_port, interval=2.0):
     Periodically broadcast this server's presence on the local network.
     Quest listens for this to auto-discover the PC's IP.
     """
-    BROADCAST_PORT = 5003
+    BROADCAST_PORT = 5013
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
