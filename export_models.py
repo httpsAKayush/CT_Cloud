@@ -6,12 +6,17 @@ from skimage import measure
 import trimesh
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import DATASET_DIR, PATIENTS, MODEL_DIR, RAW_MODEL_DIR, UNION_MODEL_DIR
+from config import (
+    DATASET_DIR, PATIENTS, MODEL_DIR, RAW_MODEL_DIR, UNION_MODEL_DIR,
+    MODEL_DECIMATE_FACE_COUNT, MODEL_MIN_VOXELS,
+    MODEL_SKELETON_DECIMATE_MULTIPLIER, MODEL_RAW_DECIMATE_MULTIPLIER,
+    MODEL_SCALE_FACTOR,
+    SMALL_STRUCTURE_KEYWORDS, SMALL_STRUCTURE_MIN_VOXELS,
+    SMALL_STRUCTURE_DECIMATE_FACTOR
+)
 
-# ── SETTINGS ─────────────────────────────────────────────────────────────────
-DECIMATE_FACE_COUNT = 5000   # max faces per organ after decimation
-SKIP_SMALL_ORGANS   = True   # skip organs with < MIN_VOXELS voxels
-MIN_VOXELS          = 500    # minimum voxel count to include organ
+DECIMATE_FACE_COUNT = MODEL_DECIMATE_FACE_COUNT
+MIN_VOXELS           = MODEL_MIN_VOXELS
 
 # Organ groups and colors (R, G, B, A) 0-255
 ORGAN_COLORS = {
@@ -96,13 +101,13 @@ ORGAN_COLORS["muscles"] = (180, 120, 100, 140)
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
-def nii_to_mesh(nii_path, decimate=True, verbose=False):
-    """Load a .nii.gz mask and convert to trimesh Mesh."""
+def nii_to_mesh(nii_path, decimate=True, min_voxels=None, decimate_factor=1.0, verbose=False):
     img  = nib.load(nii_path)
     data = img.get_fdata()
     affine = img.affine
 
-    if data.sum() < MIN_VOXELS:
+    threshold = min_voxels if min_voxels is not None else MIN_VOXELS
+    if data.sum() < threshold:
         return None
 
     try:
@@ -113,14 +118,14 @@ def nii_to_mesh(nii_path, decimate=True, verbose=False):
     if len(faces) == 0:
         return None
 
-    # Voxel → world space
     verts_h     = np.hstack([verts, np.ones((len(verts), 1))])
     verts_world = (affine @ verts_h.T).T[:, :3]
 
     result = trimesh.Trimesh(vertices=verts_world, faces=faces, process=False)
 
-    if decimate and len(result.faces) > DECIMATE_FACE_COUNT:
-        result = result.simplify_quadric_decimation(face_count=DECIMATE_FACE_COUNT)
+    target_faces = int(DECIMATE_FACE_COUNT * decimate_factor)
+    if decimate and len(result.faces) > target_faces:
+        result = result.simplify_quadric_decimation(face_count=target_faces)
 
     return result
 
@@ -131,6 +136,9 @@ def get_color(organ_name):
         if key in organ_name.lower():
             return color
     return ORGAN_COLORS["__default__"]
+
+def is_small_structure(organ_name):
+    return any(kw in organ_name.lower() for kw in SMALL_STRUCTURE_KEYWORDS)
 
 
 def process_patient(patient_id, verbose=True):
@@ -170,7 +178,10 @@ def process_patient(patient_id, verbose=True):
         if verbose:
             print(f"    {organ_name}...", end=" ", flush=True)
 
-        mesh = nii_to_mesh(nii_path, verbose=verbose)
+        min_voxels_for_this = SMALL_STRUCTURE_MIN_VOXELS if is_small_structure(organ_name) else MIN_VOXELS
+        mesh = nii_to_mesh(nii_path, min_voxels=min_voxels_for_this,
+                   decimate_factor=(SMALL_STRUCTURE_DECIMATE_FACTOR if is_small_structure(organ_name) else 1.0),
+                   verbose=verbose)
 
         if mesh is None:
             if verbose:
@@ -200,8 +211,10 @@ def process_patient(patient_id, verbose=True):
             ratio   = (DECIMATE_FACE_COUNT * 3) / len(merged.faces)
             # merged  = merged.simplify_quadric_decimation(
             #               int(len(merged.faces) * ratio))
+            # merged = merged.simplify_quadric_decimation(
+            #  face_count=DECIMATE_FACE_COUNT * 3)
             merged = merged.simplify_quadric_decimation(
-             face_count=DECIMATE_FACE_COUNT * 3)
+                face_count=DECIMATE_FACE_COUNT * MODEL_SKELETON_DECIMATE_MULTIPLIER)
              
         color = get_color(group_name)
         merged.visual = trimesh.visual.ColorVisuals(
@@ -243,7 +256,8 @@ def process_patient(patient_id, verbose=True):
 
         centered_scene = trimesh.Scene()
         for name, geom in scene.geometry.items():
-            new_verts     = (np.array(geom.vertices) - center) * 0.0025
+            # new_verts     = (np.array(geom.vertices) - center) * 0.0025
+            new_verts = (np.array(geom.vertices) - center) * MODEL_SCALE_FACTOR
             centered_mesh = trimesh.Trimesh(
                 vertices  = new_verts,
                 faces     = np.array(geom.faces),
@@ -313,7 +327,7 @@ def process_patient_raw(patient_id, verbose=True):
         print(f"  Faces before decimation: {len(result.faces)}")
 
     # Decimate heavily — raw CT mesh is huge
-    target = DECIMATE_FACE_COUNT * 5
+    target = DECIMATE_FACE_COUNT * MODEL_RAW_DECIMATE_MULTIPLIER
     if len(result.faces) > target:
         result = result.simplify_quadric_decimation(face_count=target)
 

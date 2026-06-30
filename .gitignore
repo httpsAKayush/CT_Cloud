@@ -38,3 +38,8 @@ view/output/
 # Temporary / scratch files
 test/preprocess.py
 test/
+
+wholebody/reference
+wholebody/reference/*.stl
+wholebody/reference/29287951/*.IMA
+wholebody/reference/35594771/*.IMA
