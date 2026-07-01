@@ -6,6 +6,7 @@ from skimage import measure
 import trimesh
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from config import (
     DATASET_DIR, PATIENTS, MODEL_DIR, RAW_MODEL_DIR, UNION_MODEL_DIR,
     MODEL_DECIMATE_FACE_COUNT, MODEL_MIN_VOXELS,
