@@ -3,7 +3,7 @@ import sys
 import json
 import socket
 import threading
-import http.server
+# import http.server
 import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -15,14 +15,14 @@ TCP_PORT  = 5012   # Quest sends "match" trigger here, receives result here
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ModelHTTPHandler(http.server.SimpleHTTPRequestHandler):
-    """Serves files from UNION_MODEL_DIR."""
+# class ModelHTTPHandler(http.server.SimpleHTTPRequestHandler):
+#     """Serves files from UNION_MODEL_DIR."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=UNION_MODEL_DIR, **kwargs)
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, directory=UNION_MODEL_DIR, **kwargs)
 
-    def log_message(self, format, *args):
-        print(f"  [HTTP] {self.address_string()} - {format % args}")
+#     def log_message(self, format, *args):
+#         print(f"  [HTTP] {self.address_string()} - {format % args}")
 
 
 # def start_http_server(port=HTTP_PORT):
@@ -57,7 +57,7 @@ def run_matching(real_scan_path, mode="ct_threshold", threshold=0.55, verbose=Tr
     return result
 
 
-def handle_quest_connection(conn, addr, http_port, mode, threshold, verbose):
+def handle_quest_connection(conn, addr, mode, threshold, verbose):
     """Handle a single TCP request from Quest."""
     try:
         data = conn.recv(4096).decode("utf-8").strip()
@@ -121,7 +121,7 @@ def get_local_ip():
     return ip
 
 
-def start_tcp_server(port, http_port, mode, threshold, verbose):
+def start_tcp_server(port, mode, threshold, verbose):
     """
     TCP server that listens for match requests from Quest.
     Each connection triggers a matching run and sends back the result.
@@ -136,13 +136,13 @@ def start_tcp_server(port, http_port, mode, threshold, verbose):
         conn, addr = server_socket.accept()
         thread = threading.Thread(
             target=handle_quest_connection,
-            args=(conn, addr, http_port, mode, threshold, verbose),
+            args=(conn, addr,mode, threshold, verbose),
             daemon=True
         )
         thread.start()
 
 
-def interactive_mode(http_port, tcp_port):
+def interactive_mode(tcp_port):
     """Manual testing mode — trigger matching from keyboard."""
     print(f"\n── Interactive mode ─────────────────────────────")
     print(f"   Press Enter to trigger a match run, or type 'quit' to exit")
@@ -155,7 +155,7 @@ def interactive_mode(http_port, tcp_port):
 
             result = run_matching(REAL_SCAN_PATH, mode="ct_threshold", verbose=True)
             print(f"\n  Result: {result['patient_id']} ({result['confidence']}%)")
-            print(f"  Model URL: http://{get_local_ip()}:{http_port}/{result['patient_id']}.glb")
+            # print(f"  Model URL: http://{get_local_ip()}:{http_port}/{result['patient_id']}.glb")
 
         except KeyboardInterrupt:
             break
@@ -229,12 +229,12 @@ def main():
             print(f"    {f} ({size:.1f} MB)")
 
     if args.interactive:
-        interactive_mode(args.http_port, args.tcp_port)
+        interactive_mode(args.tcp_port)
     else:
         print(f"\n  Waiting for Quest to send match requests...")
         print(f"  (Quest connects to {local_ip}:{args.tcp_port} and sends {{\"command\": \"match\"}})")
         try:
-            start_tcp_server(args.tcp_port, args.http_port,
+            start_tcp_server(args.tcp_port,
                             args.mode, args.threshold, args.verbose)
         except KeyboardInterrupt:
             print("\n  Shutting down.")
