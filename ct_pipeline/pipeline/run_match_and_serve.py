@@ -2,7 +2,7 @@
 from ct_pipeline.config import UNION_MODEL_DIR, RAW_MODEL_DIR, CT_TCP_PORT
 from ct_pipeline.serve import tcp_server, discovery_broadcast
 from ct_pipeline.ingest.reference import find_reference_ply
-from ct_pipeline.matching.run_match import run_matching
+from ct_pipeline.pipeline.run_match import run_matching
 
 def interactive_mode(mode="raw", threshold=0.55, ref_dir=None, ref_ply=None):
     """Manual testing mode — trigger matching from keyboard."""
