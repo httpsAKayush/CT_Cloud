@@ -126,7 +126,9 @@ def build_parser():
     p.add_argument("--tcp-port", type=int, default=config.CT_TCP_PORT)
     p.add_argument("--interactive", action="store_true",
                     help="Test mode: press Enter to trigger matching manually")
-    p.add_argument("--ref-ply-name", default="s1388", help="send fake scan from this patient ID (for testing without Quest)")
+    p.add_argument("--ref-ply", default=None,
+                    help="Explicit path to a reference .ply, OR a filename to prefer "
+                     "when multiple candidates exist in --ref-dir (default: auto-discover)")
     p.add_argument("--ref-dir", default=None,
                     help="Path to ref dir/ root (default: io_data/i_data/reference_data)")
     p.set_defaults(func=cmd_match_and_send)

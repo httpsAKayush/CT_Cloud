@@ -1,10 +1,13 @@
+import os
+import open3d as o3d
+from ct_pipeline.utils.point_cloud_utils import pca_align, normalize_scale
 from ct_pipeline.ingest.ply_loader import load_database
 from ct_pipeline.matching.matcher import find_best_match
 
 def run_matching(reference_ply_path, mode="raw", threshold=0.55, verbose=True):
     """Run the matching pipeline and return the result dict."""
     
-    import open3d as o3d
+    
 
     print(f"\n── Loading database [{mode}]...")
     database = load_database(mode=mode, verbose=verbose)

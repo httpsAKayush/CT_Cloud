@@ -12,17 +12,17 @@ import os
 from ct_pipeline.config import REFERENCE_PREFERRED_NAME, REFERENCE_DIR
 
 
-def discover_reference_ply(reference_dir, preferred_name=None, verbose=True):
+def discover_reference_ply(reference_dir, explicit_path=None, preferred_name=None, verbose=True):
     """
     Resolve the reference .ply to match against.
     explicit_path always wins and skips discovery entirely.
     """
-    # if explicit_path:
-    #     if not os.path.exists(explicit_path):
-    #         raise FileNotFoundError(f"--ref-ply given but not found: {explicit_path}")
-    #     if verbose:
-    #         print(f"  [reference] Using explicit path: {explicit_path}")
-    #     return explicit_path
+    if explicit_path:
+        if not os.path.exists(explicit_path):
+            raise FileNotFoundError(f"--ref-ply given but not found: {explicit_path}")
+        if verbose:
+            print(f"  [reference] Using explicit path: {explicit_path}")
+        return explicit_path
 
     if not os.path.exists(reference_dir):
         raise FileNotFoundError(f"Reference directory not found: {reference_dir}")
@@ -69,4 +69,8 @@ def find_reference_ply(ref_ply=None, ref_dir=None, verbose=True):
     Otherwise, discover_reference_ply() is called to find the best candidate.
     """
     reference_dir = ref_dir if ref_dir else REFERENCE_DIR
+    # if ref_ply looks like an existing path, treat as explicit override;
+    # otherwise treat as a preferred filename to search for
+    if ref_ply and os.path.exists(ref_ply):
+        return discover_reference_ply(reference_dir, explicit_path=ref_ply, verbose=verbose)
     return discover_reference_ply(reference_dir, preferred_name=ref_ply, verbose=verbose)

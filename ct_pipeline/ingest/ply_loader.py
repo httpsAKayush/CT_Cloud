@@ -1,4 +1,5 @@
 import os
+import open3d as o3d
 from ct_pipeline.config import RAW_PLY_DIR, UNION_PLY_DIR
 
 def discover_available_patients(ply_dir):

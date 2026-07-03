@@ -5,7 +5,7 @@ import threading
 
 from ct_pipeline.config import (
     RAW_PLY_DIR, UNION_PLY_DIR, RAW_MODEL_DIR, UNION_MODEL_DIR,
-    REFERENCE_DIR, CT_TCP_PORT,
+    REFERENCE_DIR, CT_TCP_PORT, MERGED_MODEL_DIR
 )
 from ct_pipeline.ingest.reference import find_reference_ply
 from ct_pipeline.pointcloud.alignment import pca_align, normalize_scale
@@ -14,9 +14,9 @@ from ct_pipeline.pointcloud.alignment import pca_align, normalize_scale
 # from ct_pipeline.matching.matcher import find_best_match
 from ct_pipeline.matching.run_match import run_matching
 
-def _model_dir_for(mode):
-    return RAW_MODEL_DIR if mode == "raw" else UNION_MODEL_DIR
 
+def _model_dir_for(send):
+    return {"raw": RAW_MODEL_DIR, "union": UNION_MODEL_DIR, "merged": MERGED_MODEL_DIR}[send]
 
 # def run_matching(reference_ply_path, mode="raw", threshold=0.55, verbose=True):
 #     """Run the matching pipeline and return the result dict."""
@@ -42,7 +42,7 @@ def _model_dir_for(mode):
 
 
 # def handle_quest_connection(conn, addr, mode, threshold, verbose):
-def handle_quest_connection(conn, ref_ply, ref_dir, addr, mode, send, threshold, verbose):
+def handle_quest_connection(conn, addr, ref_ply, ref_dir, mode, send, threshold, verbose):
     """Handle a single TCP request from Quest."""
     try:
         data = conn.recv(4096).decode("utf-8").strip()
