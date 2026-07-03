@@ -142,6 +142,7 @@ numpy==2.5.0
     #   matplotlib
     #   nibabel
     #   open3d
+    #   opencv-python
     #   pandas
     #   pyquaternion
     #   scikit-image
@@ -150,6 +151,8 @@ numpy==2.5.0
     #   tifffile
     #   trimesh
 open3d==0.19.0
+    # via -r requirements_compile.in
+opencv-python==5.0.0.93
     # via -r requirements_compile.in
 packaging==26.2
     # via
@@ -193,6 +196,8 @@ pydantic-core==2.46.4
     # via pydantic
 pydantic-settings==2.14.2
     # via mcp
+pydicom==3.0.2
+    # via -r requirements_compile.in
 pygments==2.20.0
     # via
     #   ipython
@@ -203,6 +208,8 @@ pyparsing==3.3.2
     # via matplotlib
 pyquaternion==0.9.9
     # via open3d
+pyrealsense2==2.58.2.10647
+    # via -r requirements_compile.in
 python-dateutil==2.9.0.post0
     # via
     #   matplotlib
