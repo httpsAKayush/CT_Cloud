@@ -1,84 +1,133 @@
-# Quick Setup(for Conda)
+# CT Pipeline
+
+Restructured, format-agnostic pipeline: CT scan data (`.nii.gz` segmentation
+folders or `.IMA` slice folders) → aligned `.ply` point clouds (raw + union)
+→ optional `.glb` models → match against a reference scan → send to Quest.
+
+## Directory layout
+
 ```
+ct_pipeline/                     # installable package — all code lives here
+  config.py                      # single source of truth for every path/constant
+  cli.py                         # entrypoint: python -m ct_pipeline.cli <command>
+  ingest/        # Stage 1 — locate + normalize input (format dispatch lives ONLY here)
+  extract/       # Stage 2 — volume -> binary surface (raw / union)
+  pointcloud/    # Stage 3 — surface -> aligned, scaled .ply
+  model/         # Stage 4 — .ply/volume -> .glb
+  matching/      # Stage 5 — reference vs database (ICP + anthropometric features)
+  serve/         # Stage 6 — TCP + multicast, sends matched .glb to Quest
+  view/          # Stage 7 — visualize .ply
+  pipeline/      # Orchestration only — chains the stages above, no algorithm logic
+  converters/    # One-off scan -> reference.ply converters (STL phantom, raw IMA folder)
+
+io_data/
+  i_data/
+    ct_data/
+      nii_gz/<patient>/segmentations/*.nii.gz, ct.nii.gz
+      ima/<patient>/*.IMA
+    reference_data/*.ply           # auto-discovered (see rule below)
+  o_data/
+    pointclouds/{raw,union}/<patient>.ply
+    models/{raw,union,merged}/<patient>.glb
+```
+
+## Setup
+
+```bash
 conda create -n ct_pipeline python=3.12
 conda activate ct_pipeline
 pip install -r requirements.txt
 ```
-# With Python enve
-```
-py -3.12 -m venv ct_pipeline
-ct_pipeline\Scripts\activate
-pip install -r requirements.txt
-```
 
-# CLI - Cmd line Interface
-```
-conda activate ct_pipeline
-python run_preprocess.py                          # all patients
-python run_preprocess.py --patients s1388         # one patient
-python run_preprocess.py --overwrite              # force redo
-python run_preprocess.py --raw                    # all raw patients
+<!-- ## Migrating existing data (PC2, one-time)
+
+Run **on PC2**, from your *old* `ct_pipeline/` directory, before swapping in this new code:
+
+```bash
+bash migrate.sh /path/to/new_ct_pipeline_root
 ```
 
+Copies (never deletes) your existing `wholebody/` dataset and generated `.ply`/`.glb`
+files into the new `io_data/` layout. See comments in `migrate.sh` — it doesn't
+know about any existing `.IMA` folders since none existed in the old layout;
+drop those under `io_data/i_data/ct_data/ima/<patient>/` manually. -->
 
+## CLI
 
-# ── MATCHING ─────────────────────────────────────────────────────────────────
-```
-# Test with fake scan from s1388 (should match itself)
-python run_matching.py --fake s1388
+Single entrypoint, replaces the old `run_preprocess.py` / `run_matching.py` /
+`export_models.py` / `glbsender.py` / `view/visualize.py` scripts.
 
-# Test with different source patient
-python run_matching.py --fake s1371
+```bash
+# Build point clouds (raw + union) for all discovered nii_gz patients
+python -m ct_pipeline.cli create-model --format nii_gz
 
-# Stress test with heavy noise/rotation/dropout
-python run_matching.py --fake s1388 --noise 20 --rotation 30 --dropout 0.4
+# One patient, raw only, also export .glb
+python -m ct_pipeline.cli create-model --format nii_gz --patients s1388 --mode raw --with-glb
 
-# Use raw CT threshold database instead
-python run_matching.py --fake s1388 --mode ct_threshold
+# IMA patient — same command, format is the only thing that changes
+python -m ct_pipeline.cli create-model --format ima --patients p001 --with-glb
 
-# Match against a real depth camera scan
-python run_matching.py --real /path/to/real_scan.ply
+# Also produce a combined raw+union .glb
+python -m ct_pipeline.cli create-model --patients s1388 --with-glb --merge
 
-# Tune threshold and retries
-python run_matching.py --fake s1388 --threshold 0.80 --retries 5
+# Force reprocess
+python -m ct_pipeline.cli create-model --overwrite
 
-# Tune ICP voxel size (smaller = more precise but slower)
-python run_matching.py --fake s1388 --voxel-size 5.0
-```
+# Test matching locally (no Quest, no real reference scan needed)
+python -m ct_pipeline.cli test-match --fake s1388
+python -m ct_pipeline.cli test-match --fake s1388 --noise 20 --rotation 30 --dropout 0.4
+python -m ct_pipeline.cli test-match --mode union --fake s1371
 
-# export model
-```
-# Export segmented organs (default)
-python export_models.py --patients s1388
+# Run the Quest-facing server (auto-discovers reference.ply from reference_data/)
+python -m ct_pipeline.cli match-and-send --mode raw
+python -m ct_pipeline.cli match-and-send --mode raw --interactive   # manual trigger, no Quest needed
 
-# Export raw CT surface
-python export_models.py --patients s1388 --raw
-
-# Export both for all patients
-python export_models.py
-python export_models.py --raw
-```
-
-
-# server
-```
-ip addr | grep "inet " | grep -v 127.0.0.1               ░▒▓ ✔ ▓▒░
+# View
+python -m ct_pipeline.cli view -p s1388 --source union
+python -m ct_pipeline.cli view --all --source both --save
+python -m ct_pipeline.cli view --ply /path/to/file.ply
+python -m ct_pipeline.cli view --seg /path/to/s1388   # generate + view on the fly, no .ply needed
 ```
 
-```
-# Just serve models (Quest can download manually)
-python server.py --quest-ip 192.168.1.X
+Every path flag (`--db-dir`, `--save-dir`, etc.) defaults to the `io_data/`
+layout in `config.py` and can be overridden per-call — nothing is hardcoded
+to one directory.
 
-# Interactive mode — type patient ID to send to Quest
-python server.py --quest-ip 192.168.1.X --interactive
+## Reference `.ply` discovery rule (`ingest/reference.py`)
 
-# Full pipeline — real scan → match → send to Quest
-python server.py --quest-ip 192.168.1.X --real-scan /path/to/scan.ply
+- 0 files in `reference_data/` → error
+- 1 file → use it
+- \>1 files → use `reference.ply` if present, else the most-recently-modified `.ply`
+- Always prints what was picked and what else was found — never silent.
 
-# Test HTTP server is working
-curl http://localhost:8080/
-```
+Override anytime with `--ref-ply /explicit/path.ply` (skips discovery entirely).
 
+## Format extensibility (IMA + TotalSegmentator, later)
+
+`ingest/discovery.py:resolve_extractor()` is the **only** place that knows
+which extraction function to use per format. Today:
+
+- `nii_gz` → real per-organ union (`extract/segmentation.py`) + HU-threshold raw
+- `ima` → both raw and union come from the same threshold surface
+  (`extract/ima_surface.py`) — no organ separation yet
+
+When TotalSegmentator support for `.IMA` is added (`extract/totalseg.py`,
+currently a stub), only `resolve_extractor()`'s `ima` branch changes.
+`pointcloud/`, `model/`, and `matching/` need zero changes — they only ever
+see "a binary volume + affine", never a format.
+
+## What's algorithmically unchanged
+
+PCA alignment, scale normalization, marching cubes, organ mesh
+decimation/coloring, the 46-dim anthropometric feature vector + weights,
+ICP registration, the 60/40 (or 90/10 fallback) combined scoring, multicast
+discovery, and the TCP header+bytes protocol are all byte-for-byte the same
+logic as before — only file location and import paths changed.
+
+One pre-existing inconsistency was **preserved, not fixed**: the raw model
+export never applied `MODEL_SCALE_FACTOR` (only the union/segmentation
+export did) — see the note in `model/raw_export.py`. Flagging in case you
+want it fixed now that it's visible.
 
 
 # making requirements.txt

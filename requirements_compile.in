@@ -4,3 +4,4 @@ open3d
 numpy
 trimesh
 fast-simplification
+pydicom
