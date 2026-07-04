@@ -4,5 +4,3 @@
 
 
 
-# ct.nii.gz
-# segmentations
