@@ -24,29 +24,19 @@ ct_pipeline_env/
 io_data/o_data/pointclouds/*.ply
 io_data/o_data/pointclouds/raw/*.ply
 io_data/o_data/pointclouds/union/*.ply
+
 io_data/o_data/models/*.glb
-io_data/o_data/models/*.fbx
-io_data/o_data/models/*.obj
 io_data/o_data/models/raw/*.glb
 io_data/o_data/models/union/*.glb
 io_data/o_data/models/merged/*.glb
 
 io_data/i_data/ct_data/ima/*/*.IMA
+
 io_data/i_data/ct_data/nii_gz/*/*.nii.gz
 io_data/i_data/ct_data/nii_gz/*/*/*.nii.gz
+
 io_data/i_data/reference_data/*.ply
 
 
-# Test outputs
-test/pointclouds/
-test/models/
-view/output/
 
-# Temporary / scratch files
-test/preprocess.py
-test/
 
-wholebody/reference
-wholebody/reference/*.stl
-wholebody/reference/29287951/*.IMA
-wholebody/reference/35594771/*.IMA
