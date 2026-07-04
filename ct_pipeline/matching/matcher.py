@@ -1,3 +1,4 @@
+
 import os
 import time
 import numpy as np
@@ -116,3 +117,54 @@ def find_best_match(real_pcd, database, threshold=0.55, max_retries=3, voxel_siz
     best["fallback"] = fallback
     best["attempts"] = attempt
     return best
+
+
+def match_reference_file(reference_ply_path, mode="raw", threshold=0.55, verbose=True):
+    """
+    Single shared entrypoint for matching a REAL reference scan (loaded from disk)
+    against the database. Used by matcher.run_reference_match() and anywhere else
+    that has a .ply *path* rather than an in-memory pcd.
+
+    Not used by test-match — fake scans are perturbed copies of already-aligned
+    database clouds, so they must NOT be re-aligned/re-normalized here (doing so
+    degrades matching). test_match calls match_against_database/find_best_match
+    directly with its already-prepared fake pcd instead.
+    """
+    import open3d as o3d
+    from ct_pipeline.pointcloud.alignment import pca_align, normalize_scale
+
+    if verbose:
+        print(f"\n── Loading database [{mode}]...")
+    database = load_database(mode=mode, verbose=verbose)
+    if not database:
+        raise RuntimeError(f"No point clouds found for mode={mode}. Run create-model first.")
+
+    if verbose:
+        print(f"\n── Loading reference scan: {reference_ply_path}")
+    if not os.path.exists(reference_ply_path):
+        raise FileNotFoundError(f"Reference scan not found: {reference_ply_path}")
+
+    pcd = o3d.io.read_point_cloud(reference_ply_path)
+    pcd = pca_align(pcd, verbose=verbose)
+    pcd = normalize_scale(pcd, verbose=verbose)
+
+    if verbose:
+        print(f"\n── Matching...")
+    result = find_best_match(pcd, database, threshold=threshold, verbose=verbose)
+
+    if verbose:
+        print(f"\n── Best match: {result['patient_id']} ({result['confidence']}%)")
+    return result
+
+
+def run_reference_match(ref_ply=None, ref_dir=None, mode="raw", threshold=0.55, verbose=True):
+    """
+    The full MATCH step, decoupled from sending: discover which reference .ply
+    to use, then match it against the database. Returns the result dict only —
+    no knowledge of models/.glb/sockets here at all. serve/model_sender.py is
+    the one place that turns a result into bytes on the wire.
+    """
+    from ct_pipeline.ingest.reference import find_reference_ply
+
+    reference_ply_path = find_reference_ply(ref_ply=ref_ply, ref_dir=ref_dir, verbose=verbose)
+    return match_reference_file(reference_ply_path, mode=mode, threshold=threshold, verbose=verbose)

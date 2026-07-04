@@ -14,6 +14,7 @@ Usage:
   python -m ct_pipeline.cli create-model --format ima --patients p001 --mode raw
   python -m ct_pipeline.cli match-and-send --mode raw
   python -m ct_pipeline.cli test-match --fake s1388
+  python -m ct_pipeline.cli test-match --real-ply /path/to/scan.ply
   python -m ct_pipeline.cli view --all --source union --save
 """
 import argparse
@@ -37,26 +38,15 @@ def cmd_create_model(args):
     )
 
 
-# def cmd_match_and_send(args):
-#     from ct_pipeline.pipeline import run_match_and_serve
-#     config.ensure_dirs()
-#     run_match_and_serve.run(
-#         mode=args.mode,
-#         threshold=args.threshold,
-#         tcp_port=args.tcp_port,
-#         interactive=args.interactive,
-#         verbose=True,
-#     )
 def cmd_match_and_send(args):
     from ct_pipeline.pipeline import run_match_and_serve
     config.ensure_dirs()
     run_match_and_serve.run(
-        match=args.match,
+        mode=args.mode,
         send=args.send,
         threshold=args.threshold,
         tcp_port=args.tcp_port,
-        interactive=args.interactive,
-        ref_ply=args.ref_ply_name,
+        ref_ply=args.ref_ply,
         ref_dir=args.ref_dir,
         verbose=True,
     )
@@ -66,6 +56,7 @@ def cmd_test_match(args):
     from ct_pipeline.pipeline import run_test_match
     run_test_match.run(
         fake_patient=args.fake,
+        real_ply=args.real_ply,
         mode=args.mode,
         threshold=args.threshold,
         retries=args.retries,
@@ -116,26 +107,30 @@ def build_parser():
 
     # ── match-and-send ────────────────────────────────────────────────────
     p = sub.add_parser("match-and-send", help="Run the Quest-facing TCP match+send server")
-    # p.add_argument("--mode", choices=["raw", "union"], default="raw",
-    #                 help="Which database to match against (default: raw)")
-    p.add_argument("--mode", choices=["raw", "union","merged"], default="raw",
-                    help="Which database to match against (default: raw)")
-    p.add_argument("--send", choices=["raw", "union","merged"], default="union",
-                    help="Which database to send to (default: union)")
+    p.add_argument("--mode", choices=["raw", "union"], default="raw",
+                    help="Which point cloud database to match against (default: raw). "
+                         "No 'merged' here — only .glb models have a merged variant, not point clouds.")
+    p.add_argument("--send", choices=["raw", "union", "merged"], default="union",
+                    help="Which .glb model folder to send once matched (default: union)")
     p.add_argument("--threshold", type=float, default=0.55)
     p.add_argument("--tcp-port", type=int, default=config.CT_TCP_PORT)
-    p.add_argument("--interactive", action="store_true",
-                    help="Test mode: press Enter to trigger matching manually")
     p.add_argument("--ref-ply", default=None,
                     help="Explicit path to a reference .ply, OR a filename to prefer "
-                     "when multiple candidates exist in --ref-dir (default: auto-discover)")
+                         "when multiple candidates exist in --ref-dir (default: auto-discover)")
     p.add_argument("--ref-dir", default=None,
-                    help="Path to ref dir/ root (default: io_data/i_data/reference_data)")
+                    help="Path to reference_data/ root (default: io_data/i_data/reference_data)")
     p.set_defaults(func=cmd_match_and_send)
 
     # ── test-match ────────────────────────────────────────────────────────
-    p = sub.add_parser("test-match", help="Test matching locally with a fake scan (no Quest needed)")
-    p.add_argument("--fake", default="s1388", help="Patient ID to generate a fake scan from")
+    p = sub.add_parser("test-match", help="Test matching locally, no Quest needed")
+    p.add_argument("--fake", default=None,
+                    help="Generate a fake scan from this patient ID (perturbed copy of a "
+                         "database cloud — tests the algorithm). Default source if "
+                         "--real-ply is not given.")
+    p.add_argument("--real-ply", default=None,
+                    help="Path to a real .ply (camera/STL/IMA capture) to match instead of "
+                         "a fake scan — tests the real capture pipeline, incl. discovery + "
+                         "alignment. Replaces the old `match-and-send --interactive` mode.")
     p.add_argument("--mode", choices=["raw", "union"], default="raw")
     p.add_argument("--threshold", type=float, default=0.55)
     p.add_argument("--retries", type=int, default=3)
