@@ -14,8 +14,10 @@ ct_pipeline/                     # installable package — all code lives here
   extract/       # Stage 2 — volume -> binary surface (raw / union)
   pointcloud/    # Stage 3 — surface -> aligned, scaled .ply
   model/         # Stage 4 — .ply/volume -> .glb
-  matching/      # Stage 5 — reference vs database (ICP + anthropometric features)
-  serve/         # Stage 6 — TCP + multicast, sends matched .glb to Quest
+  matching/      # Stage 5 — reference vs database (ICP + anthropometric features);
+                 #   matcher.py also owns run_reference_match() (discover + match)
+  serve/         # Stage 6 — model_sender.py (send_glb: patient_id -> bytes) +
+                 #   tcp_server.py (socket/dispatch only) + multicast broadcast
   view/          # Stage 7 — visualize .ply
   pipeline/      # Orchestration only — chains the stages above, no algorithm logic
   converters/    # One-off scan -> reference.ply converters (STL phantom, raw IMA folder)
@@ -39,18 +41,11 @@ conda activate ct_pipeline
 pip install -r requirements.txt
 ```
 
-<!-- ## Migrating existing data (PC2, one-time)
+<!-- multi
 
-Run **on PC2**, from your *old* `ct_pipeline/` directory, before swapping in this new code:
+  ######
 
-```bash
-bash migrate.sh /path/to/new_ct_pipeline_root
-```
-
-Copies (never deletes) your existing `wholebody/` dataset and generated `.ply`/`.glb`
-files into the new `io_data/` layout. See comments in `migrate.sh` — it doesn't
-know about any existing `.IMA` folders since none existed in the old layout;
-drop those under `io_data/i_data/ct_data/ima/<patient>/` manually. -->
+comment-->
 
 ## CLI
 
@@ -73,14 +68,27 @@ python -m ct_pipeline.cli create-model --patients s1388 --with-glb --merge
 # Force reprocess
 python -m ct_pipeline.cli create-model --overwrite
 
-# Test matching locally (no Quest, no real reference scan needed)
+
+
+# Test matching locally, no Quest and no socket involved — two scan sources:
+# a) fake scan: perturbed copy of a database cloud (tests the algorithm/thresholds)
 python -m ct_pipeline.cli test-match --fake s1388
 python -m ct_pipeline.cli test-match --fake s1388 --noise 20 --rotation 30 --dropout 0.4
 python -m ct_pipeline.cli test-match --mode union --fake s1371
+# b) real .ply from disk (tests the real capture pipeline: camera/STL/IMA
+#    conversion, alignment, everything up to the socket layer)
+python -m ct_pipeline.cli test-match --real-ply /path/to/scan.ply
+
+
+
 
 # Run the Quest-facing server (auto-discovers reference.ply from reference_data/)
-python -m ct_pipeline.cli match-and-send --mode raw
-python -m ct_pipeline.cli match-and-send --mode raw --interactive   # manual trigger, no Quest needed
+python -m ct_pipeline.cli match-and-send --mode raw --send union
+
+# Point at an explicit reference file instead of auto-discovery
+python -m ct_pipeline.cli match-and-send --ref-ply /path/to/scan.ply
+
+
 
 # View
 python -m ct_pipeline.cli view -p s1388 --source union
@@ -89,9 +97,15 @@ python -m ct_pipeline.cli view --ply /path/to/file.ply
 python -m ct_pipeline.cli view --seg /path/to/s1388   # generate + view on the fly, no .ply needed
 ```
 
-Every path flag (`--db-dir`, `--save-dir`, etc.) defaults to the `io_data/`
-layout in `config.py` and can be overridden per-call — nothing is hardcoded
-to one directory.
+Every path flag (`--db-dir`, `--save-dir`, `--ref-dir`, etc.) defaults to the
+`io_data/` layout in `config.py` and can be overridden per-call — nothing is
+hardcoded to one directory.
+
+`match-and-send` has no `--interactive` flag anymore — that mode was doing
+the exact same thing as `test-match --real-ply` (match a real file, print
+the result, don't send anything), just under a different name. Use
+`test-match --real-ply <path>` instead when you want to sanity-check a real
+scan without a Quest connected.
 
 ## Reference `.ply` discovery rule (`ingest/reference.py`)
 
@@ -100,7 +114,34 @@ to one directory.
 - \>1 files → use `reference.ply` if present, else the most-recently-modified `.ply`
 - Always prints what was picked and what else was found — never silent.
 
-Override anytime with `--ref-ply /explicit/path.ply` (skips discovery entirely).
+Override with `--ref-ply`, which accepts either:
+- an explicit path (`/path/to/scan.ply`) → skips discovery entirely, used as-is
+- a filename (`scan_b.ply`) → used as the *preferred* candidate when multiple
+  files exist in `--ref-dir`, instead of the mtime fallback
+
+## Matching and sending are separate, decoupled steps
+
+```
+matching/matcher.py       → run_reference_match()   discover ref + match, returns a result dict
+                                                       (no knowledge of .glb, models, or sockets)
+serve/model_sender.py     → send_glb()               patient_id -> bytes on the wire
+                                                       (no knowledge of how patient_id was chosen)
+serve/tcp_server.py       → dispatch only            wires the two together per request
+pipeline/run_match_and_serve.py → starts the broadcaster + tcp_server, no logic of its own
+```
+
+The TCP server (`match-and-send`) understands two JSON commands:
+
+```jsonc
+{"command": "match"}                          // discover ref, match, send matched patient's .glb
+{"command": "send", "patient_id": "s1388"}    // skip matching entirely, send this patient directly
+                                                // (manual override / testing without waiting on ICP)
+```
+
+`--mode` controls which point cloud database (`raw`/`union`) matching runs
+against; `--send` controls which `.glb` folder (`raw`/`union`/`merged`) gets
+sent once a patient is chosen — these are independent, e.g. match against
+`raw` clouds but send the colored `union` model.
 
 ## Format extensibility (IMA + TotalSegmentator, later)
 
