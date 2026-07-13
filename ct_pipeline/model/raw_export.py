@@ -13,12 +13,9 @@ import numpy as np
 from skimage import measure
 import trimesh
 
-from ct_pipeline.config import MODEL_DECIMATE_FACE_COUNT, MODEL_RAW_DECIMATE_MULTIPLIER
-# NOTE: original export_models.py's process_patient_raw() did NOT apply
-# MODEL_SCALE_FACTOR (only the union/segmentation export did). That looks
-# like an inconsistency in the original code (raw glb ends up ~400x larger
-# in world units than union glb), but per "keep logic exactly the same"
-# it's preserved as-is here rather than silently fixed. Flagging below.
+from ct_pipeline.config import (
+    MODEL_DECIMATE_FACE_COUNT, MODEL_RAW_DECIMATE_MULTIPLIER, MODEL_SCALE_FACTOR,
+)
 
 SKIN_COLOR = (210, 180, 140, 200)
 
@@ -51,11 +48,14 @@ def build_surface_glb(volume, affine, out_path, verbose=True, node_name="body_su
         mesh=mesh, vertex_colors=np.tile(SKIN_COLOR, (len(mesh.vertices), 1))
     )
 
-    # Center only — no MODEL_SCALE_FACTOR here, matching original behavior exactly.
+    # Center, then apply the same scale factor the union export uses —
+    # previously missing here, which made raw .glb ~400x larger in world
+    # units than the union .glb. Fixed to keep both consistent.
     center = mesh.vertices.mean(axis=0)
-    mesh.vertices = mesh.vertices - center
+    mesh.vertices = (mesh.vertices - center) * MODEL_SCALE_FACTOR
     if verbose:
         print(f"  Centered mesh (offset: {center.round(1)})")
+        print(f"  Applied scale factor: {MODEL_SCALE_FACTOR}")
 
     scene = trimesh.Scene()
     scene.add_geometry(mesh, node_name=node_name)

@@ -192,18 +192,21 @@ def build_union_glb(patient_id, patient_dir, out_path, verbose=True):
                 face_count=DECIMATE_FACE_COUNT * MODEL_SKELETON_DECIMATE_MULTIPLIER)
 
         color = get_color(group_name)
-        merged.visual = trimesh.visual.ColorVisuals(
-            mesh=merged, vertex_colors=np.tile(color, (len(merged.vertices), 1))
+        material = trimesh.visual.material.PBRMaterial(
+            baseColorFactor=np.array(color, dtype=float) / 255.0
         )
+        merged.visual = trimesh.visual.TextureVisuals(material=material)
+
         scene.add_geometry(merged, node_name=group_name)
         if verbose:
             print(f"    Group '{group_name}': {len(merged.faces)} faces")
 
     for organ_name, mesh in individual_meshes.items():
         color = get_color(organ_name)
-        mesh.visual = trimesh.visual.ColorVisuals(
-            mesh=mesh, vertex_colors=np.tile(color, (len(mesh.vertices), 1))
+        material = trimesh.visual.material.PBRMaterial(
+            baseColorFactor=np.array(color, dtype=float) / 255.0
         )
+        mesh.visual = trimesh.visual.TextureVisuals(material=material)
         scene.add_geometry(mesh, node_name=organ_name)
 
     # Center + scale
@@ -220,8 +223,12 @@ def build_union_glb(patient_id, patient_dir, out_path, verbose=True):
         centered_scene = trimesh.Scene()
         for name, geom in scene.geometry.items():
             new_verts = (np.array(geom.vertices) - center) * MODEL_SCALE_FACTOR
-            centered_mesh = trimesh.Trimesh(vertices=new_verts, faces=np.array(geom.faces), process=False)
-            centered_mesh.visual = geom.visual
+            centered_mesh = trimesh.Trimesh(
+                vertices=new_verts,
+                faces=np.array(geom.faces),
+                process=False
+            )
+            centered_mesh.visual = geom.visual  # PBRMaterial carries over correctly
             centered_scene.add_geometry(centered_mesh, node_name=name)
         scene = centered_scene
 
