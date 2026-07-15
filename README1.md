@@ -13,14 +13,12 @@ ct_pipeline/                     # installable package — all code lives here
   ingest/        # Stage 1 — locate + normalize input (format dispatch lives ONLY here)
   extract/       # Stage 2 — volume -> binary surface (raw / union)
   pointcloud/    # Stage 3 — surface -> aligned, scaled .ply
-  model/         # Stage 4 — .ply/volume -> .glb (builder.py: raw+union from volume)
-                 #   + Stage 5 — merge_builder.py: raw.glb+union.glb -> merged.glb,
-                 #   fully decoupled from everything above it (see below)
-  matching/      # Stage 6 — reference vs database (ICP + anthropometric features);
+  model/         # Stage 4 — .ply/volume -> .glb
+  matching/      # Stage 5 — reference vs database (ICP + anthropometric features);
                  #   matcher.py also owns run_reference_match() (discover + match)
-  serve/         # Stage 7 — model_sender.py (send_glb: patient_id -> bytes) +
+  serve/         # Stage 6 — model_sender.py (send_glb: patient_id -> bytes) +
                  #   tcp_server.py (socket/dispatch only) + multicast broadcast
-  view/          # Stage 8 — visualize .ply
+  view/          # Stage 7 — visualize .ply
   pipeline/      # Orchestration only — chains the stages above, no algorithm logic
   converters/    # One-off scan -> reference.ply converters (STL phantom, raw IMA folder)
 
@@ -54,45 +52,21 @@ comment-->
 Single entrypoint, replaces the old `run_preprocess.py` / `run_matching.py` /
 `export_models.py` / `glbsender.py` / `view/visualize.py` scripts.
 
-`.ply` point clouds, `.glb` raw/union models, and merged `.glb` are three
-**independent** commands now — not one `create-model` with a pile of flags.
-Each only touches the input it actually needs:
-
-| command      | needs                          | never touches                     |
-|--------------|---------------------------------|------------------------------------|
-| `build-ply`  | source volume (nii_gz/ima)      | anything in `model/`               |
-| `build-glb`  | source volume (nii_gz/ima)      | `.ply` files                       |
-| `merge-glb`  | an existing raw.glb + union.glb | source volume, `.ply`, format/db-dir |
-
-Run them independently, or chain them yourself when you want the old
-"do everything" behavior:
-
 ```bash
 # Build point clouds (raw + union) for all discovered nii_gz patients
-python -m ct_pipeline.cli build-ply --format nii_gz
+python -m ct_pipeline.cli create-model --format nii_gz
 
-# One patient, raw point cloud only
-python -m ct_pipeline.cli build-ply --format nii_gz --patients s1388 --mode raw
+# One patient, raw only, also export .glb
+python -m ct_pipeline.cli create-model --format nii_gz --patients s1388 --mode raw --with-glb
 
-# Build raw+union .glb for the same patient — independent call, no .ply touched
-python -m ct_pipeline.cli build-glb --format nii_gz --patients s1388
+# IMA patient — same command, format is the only thing that changes
+python -m ct_pipeline.cli create-model --format ima --patients p001 --with-glb
 
-# IMA patient — same commands, format is the only thing that changes
-python -m ct_pipeline.cli build-ply --format ima --patients p001
-python -m ct_pipeline.cli build-glb --format ima --patients p001
+# Also produce a combined raw+union .glb
+python -m ct_pipeline.cli create-model --patients s1388 --with-glb --merge
 
-# Merge raw+union .glb for a patient — only reads the two .glb files already
-# on disk at their default config locations, nothing else
-python -m ct_pipeline.cli merge-glb --patients s1388
-
-# Merge two arbitrary .glb files directly — no patient_id, no format, no
-# db-dir, works even on files that never went through this pipeline
-python -m ct_pipeline.cli merge-glb --raw-glb /path/raw.glb --union-glb /path/union.glb --out /path/merged.glb
-
-# Force reprocess (same --overwrite flag on all three)
-python -m ct_pipeline.cli build-ply --overwrite
-python -m ct_pipeline.cli build-glb --overwrite
-python -m ct_pipeline.cli merge-glb --patients s1388 --overwrite
+# Force reprocess
+python -m ct_pipeline.cli create-model --overwrite
 
 
 
@@ -132,18 +106,6 @@ the exact same thing as `test-match --real-ply` (match a real file, print
 the result, don't send anything), just under a different name. Use
 `test-match --real-ply <path>` instead when you want to sanity-check a real
 scan without a Quest connected.
-
-## Why `merge-glb` is a separate command
-
-Merging only ever reads two already-built `.glb` files and writes a third —
-it was never actually a part of the volume → surface → mesh pipeline, it
-just used to be *bundled into* `create-model` behind a `--merge` flag that
-still demanded `--format`/`--db-dir`/patient discovery it didn't use. Now
-`model/merge_builder.py` is the only module that imports `merge_export.py`,
-and it takes either a `patient_id` (default raw/union/merged paths from
-config) or fully explicit `--raw-glb`/`--union-glb`/`--out` paths — so you
-can re-run or retune a merge at any time without the source CT data,
-segmentations, or point clouds existing anywhere.
 
 ## Reference `.ply` discovery rule (`ingest/reference.py`)
 
@@ -193,8 +155,7 @@ which extraction function to use per format. Today:
 When TotalSegmentator support for `.IMA` is added (`extract/totalseg.py`,
 currently a stub), only `resolve_extractor()`'s `ima` branch changes.
 `pointcloud/`, `model/`, and `matching/` need zero changes — they only ever
-see "a binary volume + affine", never a format. `merge-glb` needs zero
-changes regardless — it never sees a format at all.
+see "a binary volume + affine", never a format.
 
 ## What's algorithmically unchanged
 
@@ -202,8 +163,7 @@ PCA alignment, scale normalization, marching cubes, organ mesh
 decimation/coloring, the 46-dim anthropometric feature vector + weights,
 ICP registration, the 60/40 (or 90/10 fallback) combined scoring, multicast
 discovery, and the TCP header+bytes protocol are all byte-for-byte the same
-logic as before — only file location, import paths, and how the three
-`model/` outputs (raw, union, merged) get orchestrated from the CLI changed.
+logic as before — only file location and import paths changed.
 
 One pre-existing inconsistency was **preserved, not fixed**: the raw model
 export never applied `MODEL_SCALE_FACTOR` (only the union/segmentation

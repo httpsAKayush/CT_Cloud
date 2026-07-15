@@ -1,5 +1,3 @@
-
-
 """
 Orchestration only — chains serve.tcp_server + serve.discovery_broadcast +
 matching.matcher.match_reference_file.
@@ -19,7 +17,7 @@ def _model_dir_for(send):
 
 
 def run(mode="raw", send="union", threshold=0.55, tcp_port=CT_TCP_PORT,
-        ref_ply=None, ref_dir=None, verbose=True):
+        ref_ply=None, ref_dir=None, apply_scale=False, scale_factor=None, verbose=True):
     model_dir = _model_dir_for(send)
 
     print(f"\n{'='*50}")
@@ -34,10 +32,13 @@ def run(mode="raw", send="union", threshold=0.55, tcp_port=CT_TCP_PORT,
     print(f"  Models dir : {model_dir}")
     print(f"  Match mode : {mode}")
     print(f"  Send mode  : {send}")
+    print(f"  Send scale : {'ON (factor=' + str(scale_factor) + ')' if apply_scale and scale_factor is not None else ('ON (config default)' if apply_scale else 'off')}")
     print(f"\n  Waiting for Quest to send match requests...")
     print(f"  (Quest connects to {local_ip}:{tcp_port} and sends {{\"command\": \"match\"}})")
     try:
         tcp_server.start_tcp_server(port=tcp_port, ref_ply=ref_ply, ref_dir=ref_dir,
-                                     mode=mode, send=send, threshold=threshold, verbose=verbose)
+                                     mode=mode, send=send, threshold=threshold,
+                                     apply_scale=apply_scale, scale_factor=scale_factor,
+                                     verbose=verbose)
     except KeyboardInterrupt:
         print("\n  Shutting down.")
