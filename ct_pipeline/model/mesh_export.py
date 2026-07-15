@@ -220,8 +220,22 @@ def build_union_glb(patient_id, patient_dir, out_path, verbose=True):
         if verbose:
             print(f"  Centering scene (bbox center: {center.round(1)})")
 
+        # centered_scene = trimesh.Scene()
+        # for name, geom in scene.geometry.items():
+        #     new_verts = (np.array(geom.vertices) - center) * MODEL_SCALE_FACTOR
+        #     centered_mesh = trimesh.Trimesh(
+        #         vertices=new_verts,
+        #         faces=np.array(geom.faces),
+        #         process=False
+        #     )
+        #     centered_mesh.visual = geom.visual  # PBRMaterial carries over correctly
+        #     centered_scene.add_geometry(centered_mesh, node_name=name)
+        # scene = centered_scene
+
         centered_scene = trimesh.Scene()
-        for name, geom in scene.geometry.items():
+        for node_name in scene.graph.nodes_geometry:
+            _, geom_key = scene.graph[node_name]
+            geom = scene.geometry[geom_key]
             new_verts = (np.array(geom.vertices) - center) * MODEL_SCALE_FACTOR
             centered_mesh = trimesh.Trimesh(
                 vertices=new_verts,
@@ -229,7 +243,7 @@ def build_union_glb(patient_id, patient_dir, out_path, verbose=True):
                 process=False
             )
             centered_mesh.visual = geom.visual  # PBRMaterial carries over correctly
-            centered_scene.add_geometry(centered_mesh, node_name=name)
+            centered_scene.add_geometry(centered_mesh, node_name=node_name)
         scene = centered_scene
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
