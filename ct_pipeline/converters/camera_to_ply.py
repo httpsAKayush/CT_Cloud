@@ -6,6 +6,7 @@ import copy
 import os
 os.environ["QT_QPA_PLATFORM"] = "xcb"
 os.environ["XDG_SESSION_TYPE"] = "x11"  # sometimes needed for GLFW/GLEW too
+
 from ct_pipeline.config import REFERENCE_DIR
 
 # direc = os.path.expanduser('~/ct_pipeline')

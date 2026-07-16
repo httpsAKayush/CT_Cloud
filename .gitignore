@@ -32,6 +32,7 @@ io_data/o_data/models/merged/*.glb
 io_data/o_data/models/merged/*.bak
 io_data/o_data/models/merged/*.bak1
 io_data/o_data/models/merged/*.bak2
+io_data/o_data/models/merged/*.bak3
 
 io_data/i_data/ct_data/ima/*/*.IMA
 

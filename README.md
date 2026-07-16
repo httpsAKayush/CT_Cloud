@@ -37,9 +37,14 @@ io_data/
 
 ## Setup
 
-```bash
+```bash for conda
 conda create -n ct_pipeline python=3.12
 conda activate ct_pipeline
+pip install -r requirements.txt
+```
+```bash
+python3.12 -m venv ct_pipeline
+source ct_pipeline/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -68,6 +73,11 @@ Run them independently, or chain them yourself when you want the old
 "do everything" behavior:
 
 ```bash
+
+#depth scan 
+python -m ct_pipeline.converters.camera_to_ply
+
+
 # Build point clouds (raw + union) for all discovered nii_gz patients
 python -m ct_pipeline.cli build-ply --format nii_gz
 
@@ -121,29 +131,43 @@ python -m ct_pipeline.cli view -p s1388 --source union
 python -m ct_pipeline.cli view --all --source both --save
 python -m ct_pipeline.cli view --ply /path/to/file.ply
 python -m ct_pipeline.cli view --seg /path/to/s1388   # generate + view on the fly, no .ply needed
+
+
+
 ```
 
+
+# patients related flags, changable
 Every path flag (`--db-dir`, `--save-dir`, `--ref-dir`, etc.) defaults to the
 `io_data/` layout in `config.py` and can be overridden per-call — nothing is
 hardcoded to one directory.
 
-`match-and-send` has no `--interactive` flag anymore — that mode was doing
+
+# real-ply test
+`match-and-send` has no `--interactive` flag anymore — 
+that mode was doing
 the exact same thing as `test-match --real-ply` (match a real file, print
-the result, don't send anything), just under a different name. Use
+the result, don't send anything), 
+just under a different name. Use
 `test-match --real-ply <path>` instead when you want to sanity-check a real
 scan without a Quest connected.
+
+
 
 ## Why `merge-glb` is a separate command
 
 Merging only ever reads two already-built `.glb` files and writes a third —
+
 it was never actually a part of the volume → surface → mesh pipeline, it
 just used to be *bundled into* `create-model` behind a `--merge` flag that
-still demanded `--format`/`--db-dir`/patient discovery it didn't use. Now
+still demanded `--format`/`--db-dir`/patient discovery it didn't use. 
+Now,
 `model/merge_builder.py` is the only module that imports `merge_export.py`,
 and it takes either a `patient_id` (default raw/union/merged paths from
 config) or fully explicit `--raw-glb`/`--union-glb`/`--out` paths — so you
 can re-run or retune a merge at any time without the source CT data,
 segmentations, or point clouds existing anywhere.
+
 
 ## Reference `.ply` discovery rule (`ingest/reference.py`)
 
@@ -156,6 +180,7 @@ Override with `--ref-ply`, which accepts either:
 - an explicit path (`/path/to/scan.ply`) → skips discovery entirely, used as-is
 - a filename (`scan_b.ply`) → used as the *preferred* candidate when multiple
   files exist in `--ref-dir`, instead of the mtime fallback
+
 
 ## Matching and sending are separate, decoupled steps
 
@@ -180,6 +205,7 @@ The TCP server (`match-and-send`) understands two JSON commands:
 against; `--send` controls which `.glb` folder (`raw`/`union`/`merged`) gets
 sent once a patient is chosen — these are independent, e.g. match against
 `raw` clouds but send the colored `union` model.
+
 
 ## Format extensibility (IMA + TotalSegmentator, later)
 
