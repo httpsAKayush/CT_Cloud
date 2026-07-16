@@ -37,14 +37,21 @@ io_data/
 
 ## Setup
 
-```bash for conda
+```bash conda for linux
 conda create -n ct_pipeline python=3.12
 conda activate ct_pipeline
 pip install -r requirements.txt
 ```
-```bash for venv
+```bash venv for linux
 python3.12 -m venv ct_pipeline
 source ct_pipeline/bin/activate
+pip install -r requirements.txt
+```
+
+
+```bash venv for windows
+py 3.12 -m venv ct_pipeline
+.\ct_pipeline\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
@@ -123,6 +130,9 @@ python -m ct_pipeline.cli match-and-send --mode raw --send union
 
 # Point at an explicit reference file instead of auto-discovery
 python -m ct_pipeline.cli match-and-send --ref-ply /path/to/scan.ply
+
+# apply-scale if model is made outside this pipeline
+python -m ct_pipeline.cli match-and-send --mode raw --send merged --apply-scale
 
 
 
