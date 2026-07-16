@@ -1,0 +1,9 @@
+nibabel 
+scikit-image 
+open3d 
+numpy
+trimesh
+fast-simplification
+pyrealsense2
+opencv-python
+pydicom

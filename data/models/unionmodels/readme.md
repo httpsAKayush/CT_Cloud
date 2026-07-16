@@ -1,1 +1,0 @@
-# .glb union segmentation models

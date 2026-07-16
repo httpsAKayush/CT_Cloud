@@ -21,20 +21,26 @@ ct_pipeline_env/
 .conda/
 
 # Data files (large, not for git)
-data/pointclouds/*.ply
-data/pointclouds/rawclouds/*.ply
-data/pointclouds/unionclouds/*.ply
-data/models/*.glb
-data/models/*.fbx
-data/models/*.obj
-data/models/rawmodels/*.glb
-data/models/unionmodels/*.glb
+io_data/o_data/pointclouds/*.ply
+io_data/o_data/pointclouds/raw/*.ply
+io_data/o_data/pointclouds/union/*.ply
 
-# Test outputs
-test/pointclouds/
-test/models/
-view/output/
+io_data/o_data/models/*.glb
+io_data/o_data/models/raw/*.glb
+io_data/o_data/models/union/*.glb
+io_data/o_data/models/merged/*.glb
+io_data/o_data/models/merged/*.bak
+io_data/o_data/models/merged/*.bak1
+io_data/o_data/models/merged/*.bak2
+io_data/o_data/models/merged/*.bak3
 
-# Temporary / scratch files
-test/preprocess.py
-test/
+io_data/i_data/ct_data/ima/*/*.IMA
+
+io_data/i_data/ct_data/nii_gz/*/*.nii.gz
+io_data/i_data/ct_data/nii_gz/*/*/*.nii.gz
+
+io_data/i_data/reference_data/*.ply
+
+
+
+
