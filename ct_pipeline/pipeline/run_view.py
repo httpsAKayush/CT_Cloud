@@ -14,8 +14,8 @@ def run(patients=None, all_patients=False, ply_paths=None, seg_paths=None, dir_p
 
     if seg_paths:
         for seg_path in seg_paths:
-            base = os.path.basename(seg_path.rstrip("/"))
-            pid = base if base != "segmentations" else os.path.basename(os.path.dirname(seg_path.rstrip("/")))
+            base = os.path.basename(seg_path.rstrip("/\\"))
+            pid = base if base != "segmentations" else os.path.basename(os.path.dirname(seg_path.rstrip("/\\")))
             print(f"\nGenerating point cloud from segmentation folder: {seg_path}")
             try:
                 pts = viz.pointcloud_from_seg_folder(seg_path)

@@ -96,11 +96,12 @@ def pointcloud_from_seg_folder(seg_folder, verbose=True):
     from ct_pipeline.pointcloud.alignment import pca_align, normalize_scale
     from ct_pipeline.config import N_POINTS, MARCHING_CUBES_LEVEL, TARGET_UP_AXIS
 
-    if not seg_folder.endswith("segmentations") and not seg_folder.endswith("segmentations/"):
-        candidate = os.path.join(seg_folder, "segmentations")
-        patient_dir = seg_folder if os.path.exists(candidate) else os.path.dirname(seg_folder)
+    seg_folder_norm = seg_folder.rstrip("/\\")
+    if not seg_folder_norm.endswith("segmentations"):
+        candidate = os.path.join(seg_folder_norm, "segmentations")
+        patient_dir = seg_folder_norm if os.path.exists(candidate) else os.path.dirname(seg_folder_norm)
     else:
-        patient_dir = os.path.dirname(seg_folder.rstrip("/"))
+        patient_dir = os.path.dirname(seg_folder_norm)
 
     if verbose:
         print(f"  Reading segmentations from: {os.path.join(patient_dir, 'segmentations')}")

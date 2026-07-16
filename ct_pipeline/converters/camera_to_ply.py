@@ -3,9 +3,11 @@ import numpy as np
 import cv2, os
 import open3d as o3d
 import copy
-import os
-os.environ["QT_QPA_PLATFORM"] = "xcb"
-os.environ["XDG_SESSION_TYPE"] = "x11"  # sometimes needed for GLFW/GLEW too
+import platform
+
+if platform.system() == "Linux":
+    os.environ["QT_QPA_PLATFORM"] = "xcb"
+    os.environ["XDG_SESSION_TYPE"] = "x11"
 
 from ct_pipeline.config import REFERENCE_DIR
 
@@ -252,7 +254,7 @@ try:
                 continue
             print(f"Fusing {len(captured_clouds)} captures...")
             fused = register_and_merge(captured_clouds)
-            out_path = f"{direc}/phantom_pcd_fused.ply"
+            out_path = os.path.join(direc, "phantom_pcd_fused.ply")
             o3d.io.write_point_cloud(out_path, fused)
             print(f"Fused point cloud saved as {out_path} ({len(fused.points)} points)")
             o3d.visualization.draw_geometries([fused], window_name="Fused Point Cloud")
