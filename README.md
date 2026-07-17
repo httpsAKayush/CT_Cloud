@@ -54,6 +54,13 @@ pip install -r requirements.txt
 
 comment-->
 
+
+### view PLY 
+```bash
+# this is specifically for wayland, change it according to your need
+python viewPLY.py io_data/i_data/reference_data/phantom.ply   
+``` 
+
 ## CLI
 
 Single entrypoint, replaces the old `run_preprocess.py` / `run_matching.py` /
