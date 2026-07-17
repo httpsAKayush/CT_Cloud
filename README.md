@@ -57,7 +57,7 @@ comment-->
 
 ### view PLY 
 ```bash
-# this is specifically for wayland, change it according to your need
+# this is also checking wayland session in your system
 python viewPLY.py io_data/i_data/reference_data/phantom.ply   
 ``` 
 
